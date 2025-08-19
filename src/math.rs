@@ -12,12 +12,6 @@ pub mod math {
         a.saturating_sub(b)
     }
 
-    /// Multiplicates two u128 values, saturating on underflow.
-    #[inline]
-    pub fn safe_mul(a: u128, b: u128) -> u128 {
-        a.saturating_mul(b)
-    }
-
     /// Adds then subtracts values: base + plus - minus, safely.
     #[inline]
     pub fn safe_add_sub(base: u128, plus: u128, minus: u128) -> u128 {

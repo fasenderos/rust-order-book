@@ -2,13 +2,16 @@ use std::{fmt, cmp, collections::HashMap};
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::math::math::{safe_add, safe_mul, safe_sub};
+use crate::math::math::{safe_add, safe_sub};
+use crate::types::order::{FillReport, OrderStatus};
+use crate::types::OrderType;
+use crate::MarketOrder;
 use crate::{
 	error::{make_error, ErrorType, Result},
-	journal::{JournalLog, /*Snapshot*/},
+	journal::{JournalLog},
 	order_queue::OrderQueue,
 	order_side::OrderSide,
-	types::{order::{ExecutionReport, ICancelOrder, LimitOrderOptions, MarketOrderOptions}, TimeInForce},
+	types::{order::{ExecutionReport, LimitOrderOptions, MarketOrderOptions}, TimeInForce},
 	LimitOrder,
 	Side
 };
@@ -61,43 +64,59 @@ impl OrderBook {
 	}
 
 	pub fn market(&mut self, options: MarketOrderOptions) -> Result<ExecutionReport<MarketOrderOptions>> {
-		let mut response = ExecutionReport::new();
+		self.validate_market_order(&options)?;
 
-		let mut quantity_to_trade = options.size;
-		let is_buy = options.side == Side::Buy;
+		let mut order = MarketOrder::new(options.clone());
+		let mut report = ExecutionReport::new(
+			order.id,
+			OrderType::Market,
+			order.side,
+			order.remaining_qty,
+			order.status,
+			None,
+			None // price is not applicable for market orders
+		);
+
+		let mut quantity_to_trade = order.remaining_qty;
+		let is_buy = order.side == Side::Buy;
 
 		while quantity_to_trade > 0 {
-			let side_is_empty = if is_buy { self.asks.price_tree.len() == 0 } else { self.bids.price_tree.len() == 0 };
+			let side_is_empty = if is_buy { self.asks.is_empty() } else { self.bids.is_empty() };
 			if side_is_empty { break; }
 
 			let (best_price, mut best_price_queue) = {
-				let side = self.get_opposite_order_side_mut(options.side);
+				let side = self.get_opposite_order_side_mut(order.side);
 				let best_price = if is_buy { side.min_price() } else { side.max_price() };
 				let Some(price) = best_price else { break };
 				let Some(q) = side.take_queue(price) else { break };
 				(price, q)
 			};
 
-			let processed: ExecutionReport<MarketOrderOptions> = self.process_queue(&mut best_price_queue, quantity_to_trade);
+			let fills = self.process_queue(&mut best_price_queue, &mut quantity_to_trade);
 
-			response.fills.extend(processed.fills);
-			response.partial = processed.partial;
-			response.partial_quantity_processed = processed.partial_quantity_processed;
-			quantity_to_trade = processed.quantity_left;
+			order.remaining_qty = quantity_to_trade;
+			order.executed_qty = safe_sub(order.orig_qty, quantity_to_trade);
+
+			report.fills.extend(fills);
 
 			{
-				let side = self.get_opposite_order_side_mut(options.side);
-				if !best_price_queue.is_empty() {
+				let side = self.get_opposite_order_side_mut(order.side);
+				if best_price_queue.is_not_empty() {
 					side.put_queue(best_price, best_price_queue);
 				}
 			}
 		}
 
-		response.quantity_left = quantity_to_trade;
+		order.status = if order.remaining_qty > 0 { OrderStatus::PartiallyFilled } else { OrderStatus::Filled };
+
+		report.remaining_qty = order.remaining_qty;
+		report.executed_qty = order.executed_qty;
+		report.status = order.status;
+		report.taker_qty = order.executed_qty;
 
 		if self.journaling {
 			self.last_op = safe_add(self.last_op, 1);
-			response.log = Some(JournalLog {
+			report.log = Some(JournalLog {
 				op_id: self.last_op,
 				ts: Utc::now().timestamp_millis(),
 				op: "m".to_string(),
@@ -105,111 +124,78 @@ impl OrderBook {
 			})
 		}
 
-		Ok(response)
+		Ok(report)
 
 	}
 
 	pub fn limit(&mut self, options: LimitOrderOptions) -> Result<ExecutionReport<LimitOrderOptions>> {
-		let time_in_force = options.time_in_force.unwrap_or_else(|| TimeInForce::GTC);
-		if time_in_force == TimeInForce::FOK {
-			if !self.limit_order_is_fillable(options.side, options.size, options.price) {
-				return Err(make_error(ErrorType::Default)); // TODO LIMIT_ORDER_FOK_NOT_FILLABLE
-			}
-		}
-		
-		let mut response = ExecutionReport::new();
+		self.validate_limit_order(&options)?;
 
-		let mut quantity_to_trade = options.size;
-		let is_buy = options.side == Side::Buy;
+		let mut order = LimitOrder::new(options.clone());		
+		let mut report = ExecutionReport::new(
+			order.id,
+			OrderType::Limit,
+			order.side,
+			order.orig_qty,
+			order.status,
+			Some(order.time_in_force),
+			Some(order.price) // here order price is Some because we have already validated in validate_limit_order
+		);
+
+		let mut quantity_to_trade = order.orig_qty;
+		let is_buy = order.side == Side::Buy;
 		
 		while quantity_to_trade > 0 {
-			let side_is_empty = if is_buy { self.asks.price_tree.len() == 0 } else { self.bids.price_tree.len() == 0 };
+			let side_is_empty = if is_buy { self.asks.is_empty() } else { self.bids.is_empty() };
 			if side_is_empty { break; }
 
 			let (best_price, mut best_price_queue) = {
-				let side = self.get_opposite_order_side_mut(options.side);
+				let side = self.get_opposite_order_side_mut(order.side);
 				let best_price = if is_buy { side.min_price() } else { side.max_price() };
 				let Some(price) = best_price else { break };
-				if (is_buy && options.price < price) || (!is_buy && options.price > price) {
+				if (is_buy && order.price < price) || (!is_buy && order.price > price) {
 					break;
 				}
 				let Some(q) = side.take_queue(price) else { break };
 				(price, q)
 			};
 
-			if options.post_only.unwrap_or(false) {
+			if order.post_only {
 				return Err(make_error(ErrorType::Default)) // TODO LIMIT_ORDER_POST_ONLY
 			}
 
-			let processed: ExecutionReport<LimitOrderOptions> = self.process_queue(&mut best_price_queue, quantity_to_trade);
+			let fills = self.process_queue(&mut best_price_queue, &mut quantity_to_trade);
 
-			response.fills.extend(processed.fills);
-			response.partial = processed.partial;
-			response.partial_quantity_processed = processed.partial_quantity_processed;
-			quantity_to_trade = processed.quantity_left;
-			response.quantity_left = quantity_to_trade;
+			order.remaining_qty = quantity_to_trade;
+			order.executed_qty = safe_sub(order.orig_qty, quantity_to_trade);
+
+			report.fills.extend(fills);
 
 			{
-				let side = self.get_opposite_order_side_mut(options.side);
-				if !best_price_queue.is_empty() {
+				let side = self.get_opposite_order_side_mut(order.side);
+				if best_price_queue.is_not_empty() {
 					side.put_queue(best_price, best_price_queue);
 				}
 			}
 		}
 
-		let taker_qty = options.size - quantity_to_trade;
-		let maker_qty = quantity_to_trade;
+		order.taker_qty = safe_sub(order.orig_qty, quantity_to_trade);
+		order.maker_qty = quantity_to_trade;
 
-		let mut order: LimitOrder;
 		if quantity_to_trade > 0 {
-			order = LimitOrder::new(LimitOrderOptions {
-				side: options.side,
-				size: quantity_to_trade,
-				price: options.price,
-				time_in_force: Some(time_in_force),
-				post_only: options.post_only,
-			});
-			order.orig_size = options.size;
-			order.taker_qty = taker_qty;
-			order.maker_qty = maker_qty;
-
-			if response.fills.len() > 0 {
-				response.partial_quantity_processed = options.size - quantity_to_trade;
-				response.partial = Some(order.clone());
-			}
-
+			order.status = OrderStatus::PartiallyFilled;
 			let side = self.get_order_side_mut(order.side);
-			side.append(order.id, order.size, order.price);
+			side.append(order.id, order.remaining_qty, order.price);
 			self.orders.insert(order.id, order);
-		} else {
-			let mut total_quantity: u128 = 0;
-			let mut total_price: u128 = 0;
-			for order in &response.fills {
-				total_quantity = safe_add(total_quantity, order.size);
-				total_price = safe_add(total_price, safe_mul(order.price, order.size));
-			}
-
-			if let Some(partial) = response.partial {
-				if response.partial_quantity_processed > 0 {
-					total_quantity = safe_add(total_quantity, response.partial_quantity_processed);
-					total_price = safe_add(total_price, safe_mul(partial.price, response.partial_quantity_processed));
-				}
-			}
-
-			order = LimitOrder::new(LimitOrderOptions {
-				side: options.side,
-				size: quantity_to_trade,
-				price: total_price / total_quantity,
-				time_in_force: Some(time_in_force),
-				post_only: options.post_only,
-			});
-			
-			order.orig_size = options.size;
-			order.taker_qty = taker_qty;
-			order.maker_qty = maker_qty;
-
-			response.fills.push(order);
+		} else { 
+			order.status = OrderStatus::Filled;
 		}
+
+		report.remaining_qty = order.remaining_qty;
+		report.executed_qty = order.executed_qty;
+		report.taker_qty = order.taker_qty;
+		report.maker_qty = order.maker_qty;
+		report.status = order.status;
 
 		// If IOC order was not matched completely remove from the order book
 		// if time_in_force == TimeInForce::IOC && response.quantity_left > 0 {
@@ -218,7 +204,7 @@ impl OrderBook {
 
 		if self.journaling {
 			self.last_op = safe_add(self.last_op, 1);
-			response.log = Some(JournalLog {
+			report.log = Some(JournalLog {
 				op_id: self.last_op,
 				ts: Utc::now().timestamp_millis(),
 				op: "l".to_string(),
@@ -226,10 +212,10 @@ impl OrderBook {
 			})
 		}
 
-		Ok(response)
+		Ok(report)
 	}
 	
-	pub fn cancel(&mut self, id: Uuid) -> Option<ICancelOrder> {
+	pub fn cancel(&mut self, id: Uuid) -> Option<LimitOrder> {
 		let (side, price) = match self.orders.get(&id) {
 			Some(o) => (o.side, o.price),
 			None => return None
@@ -245,28 +231,32 @@ impl OrderBook {
 
 		if let Some(mut queue) = q {			
 			let canceled_order = self.cancel_order(id, &mut queue);
-			if !queue.is_empty() {
+			if queue.is_not_empty() {
 				if side == Side::Buy {
 					self.bids.put_queue(price, queue);
 				} else {
 					self.asks.put_queue(price, queue);
 				}
 			}
-			return canceled_order;
+
+			if let Some(mut canceled_order) = canceled_order {
+				canceled_order.status = OrderStatus::Canceled;
+				return Some(canceled_order);
+			}
 		}
 		None
 	}
 
-	pub fn modify(&mut self, id: Uuid, price: Option<u128>, size: Option<u128>) -> Result<ExecutionReport<LimitOrderOptions>> {
+	pub fn modify(&mut self, id: Uuid, price: Option<u128>, quantity: Option<u128>) -> Result<ExecutionReport<LimitOrderOptions>> {
 		let order = match self.cancel(id) {
-			Some(o) => o.order,
+			Some(o) => o,
 			None => return Err(make_error(ErrorType::OrderNotFount))
 		};
-		match (price, size) {
-			(None, Some(size)) => {
+		match (price, quantity) {
+			(None, Some(quantity)) => {
 				self.limit(LimitOrderOptions { 
 					side: order.side, 
-					size, 
+					quantity, 
 					price: order.price, 
 					time_in_force: Some(order.time_in_force), 
 					post_only: Some(order.post_only) 
@@ -275,16 +265,16 @@ impl OrderBook {
 			(Some(price), None) => {
 				self.limit(LimitOrderOptions { 
 					side: order.side, 
-					size: order.size, 
+					quantity: order.remaining_qty, 
 					price, 
 					time_in_force: Some(order.time_in_force), 
 					post_only: Some(order.post_only) 
 				})
 			},
-			(Some(price), Some(size)) => {
+			(Some(price), Some(quantity)) => {
 				self.limit(LimitOrderOptions { 
 					side: order.side, 
-					size, 
+					quantity, 
 					price,
 					time_in_force: Some(order.time_in_force), 
 					post_only: Some(order.post_only) 
@@ -300,83 +290,128 @@ impl OrderBook {
 		let bids = self.bids.depth(limit);
 		Depth { asks, bids }
 	}
-	fn process_queue<T>(&mut self, order_queue: &mut OrderQueue, quantity_to_trade: u128) -> ExecutionReport<T> {
-		let mut response = ExecutionReport::new();
-		response.quantity_left = quantity_to_trade;
 
-		if response.quantity_left > 0 {
-			while !order_queue.is_empty() && response.quantity_left > 0 {
-				let Some(head_order_uuid) = order_queue.head() else { break };
-				let (head_size, head_price) = match self.orders.get(&head_order_uuid) {
-					Some(o) => (o.size, o.price),
-					None => break
-				};
-				
-				if response.quantity_left < head_size {
-					{
-						match self.orders.get_mut(&head_order_uuid) {
-							Some(head_order) => {
-								head_order.size = safe_sub(head_order.size, response.quantity_left);
-								let partial = head_order.clone();
-								response.partial = Some(partial);
-								response.partial_quantity_processed = response.quantity_left;
-								order_queue.update(head_order_uuid, head_size, partial.size);
-							}
-							None => break
+	fn process_queue(&mut self, order_queue: &mut OrderQueue, quantity_left: &mut u128) -> Vec<FillReport> {
+		let mut fills = Vec::new();
+
+		while order_queue.is_not_empty() && *quantity_left > 0 {
+			let Some(head_order_uuid) = order_queue.head() else { break };
+			let (head_quantity, head_price) = match self.orders.get(&head_order_uuid) {
+				Some(o) => (o.remaining_qty, o.price),
+				None => break
+			};
+			
+			if *quantity_left < head_quantity {
+				{
+					match self.orders.get_mut(&head_order_uuid) {
+						Some(head_order) => {
+							head_order.remaining_qty = safe_sub(head_order.remaining_qty, *quantity_left);
+							head_order.executed_qty = safe_add(head_order.executed_qty, *quantity_left);
+							head_order.status = OrderStatus::PartiallyFilled;
+
+							fills.push(FillReport { 
+								order_id: head_order.id,
+								price: head_order.price,
+								quantity: *quantity_left,
+								status: head_order.status
+							});
+							
+							order_queue.update(head_order_uuid, head_quantity, head_order.remaining_qty);
 						}
-					}
-					response.quantity_left = 0;
-				} else {
-					response.quantity_left = safe_sub(response.quantity_left, head_size);
-					if let Some(canceled_order) = self.cancel_order(head_order_uuid, order_queue) {
-						response.fills.push(canceled_order.order);
+						None => break
 					}
 				}
-				self.market_price = head_price;				
+				*quantity_left = 0;
+			} else {
+				*quantity_left = safe_sub(*quantity_left, head_quantity);
+				if let Some(mut canceled_order) = self.cancel_order(head_order_uuid, order_queue) {
+					canceled_order.executed_qty = safe_add(canceled_order.executed_qty, head_quantity);
+					canceled_order.remaining_qty = 0;
+					canceled_order.status = OrderStatus::Filled;
+					fills.push(FillReport { 
+						order_id: canceled_order.id,
+						price: canceled_order.price,
+						quantity: canceled_order.executed_qty,
+						status: canceled_order.status
+					});
+				}
 			}
+			self.market_price = head_price;				
 		}
-		response
+		fills
 	}
 
-	fn cancel_order(&mut self, id: Uuid, order_queue: &mut OrderQueue) -> Option<ICancelOrder> {
+	fn cancel_order(&mut self, id: Uuid, order_queue: &mut OrderQueue) -> Option<LimitOrder> {
 		if let Some(order) = self.orders.get(&id) {
 			if order.side == Side::Buy {
-				self.bids.remove(order.id, order.size, order.price, order_queue);
+				self.bids.remove(order.id, order.remaining_qty, order.price, order_queue);
 			} else {
-				self.asks.remove(order.id, order.size, order.price, order_queue);
+				self.asks.remove(order.id, order.remaining_qty, order.price, order_queue);
 			}
 		}
 		if let Some(old_order) = self.orders.remove(&id) {
-			return Some(ICancelOrder::new(old_order));			
+			return Some(old_order);
 		}
 		None
+	}
+
+	fn validate_market_order(
+		&self,
+		options: &MarketOrderOptions,
+	) -> Result<()> {
+		if options.quantity == 0 {
+			return Err(make_error(ErrorType::InvalidQuantity));
+		}
+		if (options.side == Side::Buy && self.asks.is_empty()) || (options.side == Side::Sell && self.bids.is_empty()) {
+			return Err(make_error(ErrorType::OrderBookEmpty));
+		}
+		Ok(())
+	}
+
+	fn validate_limit_order(
+		&self,
+		options: &LimitOrderOptions,
+	) -> Result<()> {
+		if options.quantity == 0 {
+			return Err(make_error(ErrorType::InvalidQuantity));
+		}
+		if options.price == 0 {
+			return Err(make_error(ErrorType::InvalidPrice));
+		}
+		let time_in_force = options.time_in_force.unwrap_or_else(|| TimeInForce::GTC);
+		if time_in_force == TimeInForce::FOK {
+			if !self.limit_order_is_fillable(options.side, options.quantity, options.price) {
+				return Err(make_error(ErrorType::Default)); // TODO LIMIT_ORDER_FOK_NOT_FILLABLE
+			}
+		}
+		Ok(())
 	}
 
 	fn limit_order_is_fillable (
 		&self,
 		side: Side,
-		size: u128,
+		quantity: u128,
 		price: u128,
 	) -> bool {
 		return if side == Side::Buy { 
-			self.limit_buy_order_is_fillable(size, price) 
+			self.limit_buy_order_is_fillable(quantity, price) 
 		} else {
-			self.limit_sell_order_is_fillable(size, price)
+			self.limit_sell_order_is_fillable(quantity, price)
 		}
 	}
 
 	fn limit_buy_order_is_fillable (
 		&self,
-		size: u128,
+		quantity: u128,
 		price: u128,
 	) -> bool {
-		if self.asks.volume < size {
+		if self.asks.volume < quantity {
 			return false;
 		}
-		let mut cumulative_size = 0;
-		for level_price in self.asks.price_tree.iter() {
-			if price > *level_price && cumulative_size < size {
-				cumulative_size = safe_add(cumulative_size, match self.asks.prices.get(level_price) {
+		let mut cumulative_qty = 0;
+		for level_price in self.asks.prices_tree.iter() {
+			if price > *level_price && cumulative_qty < quantity {
+				cumulative_qty = safe_add(cumulative_qty, match self.asks.prices.get(level_price) {
 					Some(order_queue) => order_queue.volume,
 					None => 0
 				})
@@ -384,23 +419,23 @@ impl OrderBook {
 				break;
 			}
 		}
-		cumulative_size >= size
+		cumulative_qty >= quantity
 	}
 
 	fn limit_sell_order_is_fillable (
 		&self,
-		size: u128,
+		quantity: u128,
 		price: u128,
 	) -> bool {
-		if self.bids.volume < size {
+		if self.bids.volume < quantity {
 			return false;
 		}
 
-		let mut cumulative_size = 0;
+		let mut cumulative_qty = 0;
 
-		for level_price in self.bids.price_tree.iter() {
-			if price <= *level_price && cumulative_size < size {
-				cumulative_size = safe_add(cumulative_size, match self.bids.prices.get(level_price) {
+		for level_price in self.bids.prices_tree.iter() {
+			if price <= *level_price && cumulative_qty < quantity {
+				cumulative_qty = safe_add(cumulative_qty, match self.bids.prices.get(level_price) {
 					Some(order_queue) => order_queue.volume,
 					None => 0
 				})
@@ -408,7 +443,7 @@ impl OrderBook {
 				break;
 			}
 		}
-		cumulative_size >= size
+		cumulative_qty >= quantity
 	}
 
 	fn get_order_side_mut(&mut self, side: Side) -> &mut OrderSide {

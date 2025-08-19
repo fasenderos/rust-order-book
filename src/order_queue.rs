@@ -8,7 +8,7 @@ use crate::math::math::{safe_add, safe_add_sub, safe_sub};
 struct Node {
     prev: Option<Uuid>,
     next: Option<Uuid>,
-    size: u128
+    quantity: u128
 }
 
 #[derive(Debug)]
@@ -32,13 +32,14 @@ impl OrderQueue {
     }
 
     pub fn is_empty(&self) -> bool { self.head.is_none() }
+    pub fn is_not_empty(&self) -> bool { self.head.is_some() }
     pub fn head(&self) -> Option<Uuid> { self.head }
     pub fn tail(&self) -> Option<Uuid> { self.tail }
 
     /// Add the order id to the tail of the queue
-    pub fn append(&mut self, id: Uuid, size: u128) {
-        let new = Node { prev: self.tail, next: None, size: size };
-        self.volume = safe_add(self.volume, size);
+    pub fn append(&mut self, id: Uuid, quantity: u128) {
+        let new = Node { prev: self.tail, next: None, quantity };
+        self.volume = safe_add(self.volume, quantity);
         
         if let Some(tail_id) = self.tail {
             if let Some(tail_node) = self.nodes.get_mut(&tail_id) {
@@ -54,21 +55,21 @@ impl OrderQueue {
     }
 
     // sets up new order to list value
-    pub fn update (&mut self, id: Uuid, old_size: u128, new_size: u128) {
+    pub fn update (&mut self, id: Uuid, old_quantity: u128, new_quantity: u128) {
         if let Some(node) = self.nodes.get_mut(&id) {
-            self.volume = safe_add_sub(self.volume, new_size, old_size);
-            node.size = new_size;
+            self.volume = safe_add_sub(self.volume, new_quantity, old_quantity);
+            node.quantity = new_quantity;
         }
 	}
 
     /// removes order from the queue
-    pub fn remove(&mut self, id: Uuid, size: u128) {
+    pub fn remove(&mut self, id: Uuid, quantity: u128) {
         let node = match self.nodes.remove(&id) {
             Some(n) => n,
             None => return,
         };
 
-        self.volume = safe_sub(self.volume, size);
+        self.volume = safe_sub(self.volume, quantity);
 
         match (node.prev, node.next) {
             (Some(prev), Some(next)) => {
