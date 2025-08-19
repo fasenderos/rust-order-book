@@ -6,6 +6,15 @@ use crate::{
     types::{ OrderType, Side, TimeInForce }
 };
 
+#[derive(Debug, Clone, Copy)]
+pub enum OrderStatus {
+    New,
+    PartiallyFilled,
+    Filled,
+    Canceled,
+    Rejected,
+}
+
 #[derive(Debug)]
 pub struct MarketOrderOptions {
     pub side: Side,
@@ -19,6 +28,7 @@ pub struct MarketOrder {
     pub quantity: u128,
     pub order_type: OrderType,
     pub time: i64,
+    pub status: OrderStatus,
 }
 
 impl MarketOrder {
@@ -28,7 +38,8 @@ impl MarketOrder {
             side: options.side,
             quantity: options.quantity,
             order_type: OrderType::Market,
-            time: get_order_time(None)
+            time: get_order_time(None),
+            status: OrderStatus::New,
         }
     }
 }
@@ -55,7 +66,8 @@ pub struct LimitOrder {
     pub time_in_force: TimeInForce,
     pub post_only: bool,
     pub taker_qty: u128,
-    pub maker_qty: u128
+    pub maker_qty: u128,
+    pub status: OrderStatus,
 }
 
 impl LimitOrder {
@@ -71,7 +83,8 @@ impl LimitOrder {
             time_in_force: get_order_time_in_force(options.time_in_force),
             post_only: options.post_only.unwrap_or( false),
             taker_qty: 0,
-            maker_qty: 0
+            maker_qty: 0,
+            status: OrderStatus::New,
         }
     }
 }
