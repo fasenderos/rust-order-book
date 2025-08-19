@@ -45,6 +45,6 @@ fn main() {
     });
     
     println!("{}", ob);
-    // println!("{:?}", market_order);
+    println!("{:?}", market_order);
     // println!("market order {}", market_order);
 }
