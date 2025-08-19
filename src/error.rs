@@ -205,3 +205,127 @@ pub fn make_error<E: IntoOrderBookError>(e: E) -> OrderBookError {
 
 /// Result alias for the library.
 pub type Result<T> = std::result::Result<T, OrderBookError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_type_codes_and_messages() {
+        let cases = vec![
+            (ErrorType::Default, 1000, "Something wrong"),
+            (ErrorType::InvalidQuantity, 1102, "Invalid order quantity"),
+            (ErrorType::InvalidPrice, 1103, "Invalid order price"),
+            (ErrorType::InvalidPriceOrQuantity, 1104, "Invalid order price or quantity"),
+            (ErrorType::OrderAlredyExists, 1109, "Order already exists"),
+            (ErrorType::OrderNotFount, 1110, "Order not found"),
+            (ErrorType::OrderBookEmpty, 1200, "Order book is empty"),
+            (ErrorType::InsufficientQuantity, 1201, "Insufficient quantity to calculate price"),
+            (ErrorType::InvalidPriceLevel, 1202, "Invalid order price level"),
+        ];
+
+        for (err_type, code, msg) in cases {
+            assert_eq!(err_type.code(), code);
+            assert_eq!(err_type.message(), msg);
+        }
+    }
+
+    #[test]
+    fn test_error_type_code_and_message() {
+        assert_eq!(ErrorType::Default.code(), 1000);
+        assert_eq!(ErrorType::InvalidPrice.message(), "Invalid order price");
+        assert_eq!(ErrorType::OrderBookEmpty.code(), 1200);
+        assert_eq!(ErrorType::InvalidPriceLevel.message(), "Invalid order price level");
+    }
+
+    #[test]
+    fn test_order_book_error_new() {
+        let err = OrderBookError::new(1234, "Custom error");
+        assert_eq!(err.code, 1234);
+        assert_eq!(err.message, "Custom error");
+        assert_eq!(err.to_string(), "[1234] Custom error");
+    }
+
+    #[test]
+    fn test_order_book_error_from_code_known() {
+        let err = OrderBookError::from_code(1103);
+        assert_eq!(err.code, 1103);
+        assert_eq!(err.message, "Invalid order price");
+    }
+
+    #[test]
+    fn test_order_book_error_from_code_unknown() {
+        let err = OrderBookError::from_code(9999);
+        assert_eq!(err.code, 9999);
+        assert_eq!(err.message, "Unknown error (9999)");
+    }
+
+    #[test]
+    fn test_order_book_error_from_message() {
+        let err = OrderBookError::from_message("Oops");
+        assert_eq!(err.code, 1000);
+        assert_eq!(err.message, "Oops");
+    }
+
+    #[test]
+    fn test_order_book_error_with_message() {
+        let err = OrderBookError::new(1102, "Old")
+            .with_message("New");
+        assert_eq!(err.code, 1102);
+        assert_eq!(err.message, "New");
+    }
+
+    #[test]
+    fn test_default_message_for_code_known() {
+        assert_eq!(default_message_for_code(1102), "Invalid order quantity");
+    }
+
+    #[test]
+    fn test_default_message_for_code_unknown() {
+        assert_eq!(default_message_for_code(4242), "Unknown error (4242)");
+    }
+
+    #[test]
+    fn test_into_order_book_error_from_error_type() {
+        let err: OrderBookError = ErrorType::OrderAlredyExists.into_error();
+        assert_eq!(err.code, 1109);
+        assert_eq!(err.message, "Order already exists");
+    }
+
+    #[test]
+    fn test_into_order_book_error_from_u32() {
+        let err: OrderBookError = 1110u32.into_error();
+        assert_eq!(err.code, 1110);
+        assert_eq!(err.message, "Order not found");
+    }
+
+    #[test]
+    fn test_into_order_book_error_from_str() {
+        let err: OrderBookError = "Something bad".into_error();
+        assert_eq!(err.code, 1000);
+        assert_eq!(err.message, "Something bad");
+    }
+
+    #[test]
+    fn test_into_order_book_error_from_string() {
+        let err: OrderBookError = String::from("Failure").into_error();
+        assert_eq!(err.code, 1000);
+        assert_eq!(err.message, "Failure");
+    }
+
+    #[test]
+    fn test_make_error_utility() {
+        let err1 = make_error(ErrorType::InvalidQuantity);
+        assert_eq!(err1.code, 1102);
+
+        let err2 = make_error(1104u32);
+        assert_eq!(err2.message, "Invalid order price or quantity");
+
+        let err3 = make_error("Oops");
+        assert_eq!(err3.message, "Oops");
+
+        let err4 = make_error(String::from("Boom"));
+        assert_eq!(err4.message, "Boom");
+    }
+}
+

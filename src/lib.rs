@@ -4,7 +4,5 @@ pub mod order;
 pub mod order_book;
 pub mod order_queue;
 pub mod order_side;
-pub mod types;
+pub mod enums;
 mod math;
-
-pub use types::{ LimitOrder, MarketOrder, Side };

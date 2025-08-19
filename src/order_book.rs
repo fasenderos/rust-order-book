@@ -3,17 +3,13 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::math::math::{safe_add, safe_sub};
-use crate::types::order::{FillReport, OrderStatus};
-use crate::types::OrderType;
-use crate::MarketOrder;
 use crate::{
 	error::{make_error, ErrorType, Result},
 	journal::{JournalLog},
 	order_queue::OrderQueue,
 	order_side::OrderSide,
-	types::{order::{ExecutionReport, LimitOrderOptions, MarketOrderOptions}, TimeInForce},
-	LimitOrder,
-	Side
+	order::{LimitOrder, MarketOrder, ExecutionReport, LimitOrderOptions, MarketOrderOptions, FillReport},
+	enums::{OrderStatus, OrderType, Side, TimeInForce},
 };
 
 #[derive(Debug)]

@@ -19,3 +19,12 @@ pub enum TimeInForce {
 	IOC,
 	FOK,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OrderStatus {
+    New,
+    PartiallyFilled,
+    Filled,
+    Canceled,
+    Rejected,
+}
