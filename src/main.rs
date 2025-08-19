@@ -44,7 +44,7 @@ fn main() {
         size: 123,
     });
     
-    println!("{:?}", ob.depth(None));
+    println!("{}", ob);
     println!("{}", ob.market_price);
     // println!("market order {}", market_order);
 }

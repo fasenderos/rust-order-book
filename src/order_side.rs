@@ -10,7 +10,7 @@ use crate::{Side};
 
 #[derive(Debug)]
 pub struct OrderSide {
-    pub price_tree: RBQueue<u128, Box<dyn Fn(&u128, &u128) -> Ordering>>,
+    pub prices_tree: RBQueue<u128, Box<dyn Fn(&u128, &u128) -> Ordering>>,
     pub prices: HashMap<u128, OrderQueue>,
     pub volume: u128,
     pub side: Side,
@@ -28,7 +28,7 @@ impl OrderSide {
         OrderSide { 
             side,
             prices: HashMap::new(),
-            price_tree: RBQueue::new(Box::new(comparator)),
+            prices_tree: RBQueue::new(Box::new(comparator)),
             volume: 0,
         }
     }
@@ -36,7 +36,7 @@ impl OrderSide {
     // appends order to definite price level
     pub fn append (&mut self, id: Uuid, size: u128, price: u128) {
         let queue = self.prices.entry(price).or_insert_with(|| {
-            self.price_tree.insert(price);
+            self.prices_tree.insert(price);
             OrderQueue::new(price)
         });
 
@@ -49,7 +49,7 @@ impl OrderSide {
         queue.remove(id, size);
         if queue.is_empty() {
             self.prices.remove(&price);
-            self.price_tree.remove(&price);
+            self.prices_tree.remove(&price);
         }
         self.volume = safe_sub(self.volume, size);        
 	}
@@ -64,8 +64,8 @@ impl OrderSide {
 
     pub fn best_price(&self, min: bool) -> Option<u128> {
         let price = match (self.side, min) {
-            (Side::Sell, true) | (Side::Buy, false) => self.price_tree.peek(),
-            (Side::Sell, false) | (Side::Buy, true) => self.price_tree.peek_back(),
+            (Side::Sell, true) | (Side::Buy, false) => self.prices_tree.peek(),
+            (Side::Sell, false) | (Side::Buy, true) => self.prices_tree.peek_back(),
         };
         price.copied()
     }
@@ -84,7 +84,7 @@ impl OrderSide {
         let mut depth = Vec::new();
         let mut count = 0;
 
-        for price in self.price_tree.ordered() {
+        for price in self.prices_tree.ordered() {
             if count >= limit {
                 break;
             }
@@ -100,7 +100,7 @@ impl OrderSide {
 
 impl fmt::Display for OrderSide {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let prices = self.price_tree.ordered();
+        let prices = self.prices_tree.ordered();
         let iter: Box<dyn Iterator<Item = &&u128>> = match self.side {
             Side::Sell => Box::new(prices.iter().rev()),
             Side::Buy => Box::new(prices.iter()),

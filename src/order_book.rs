@@ -67,7 +67,7 @@ impl OrderBook {
 		let is_buy = options.side == Side::Buy;
 
 		while quantity_to_trade > 0 {
-			let side_is_empty = if is_buy { self.asks.price_tree.len() == 0 } else { self.bids.price_tree.len() == 0 };
+			let side_is_empty = if is_buy { self.asks.prices_tree.len() == 0 } else { self.bids.prices_tree.len() == 0 };
 			if side_is_empty { break; }
 
 			let (best_price, mut best_price_queue) = {
@@ -123,7 +123,7 @@ impl OrderBook {
 		let is_buy = options.side == Side::Buy;
 		
 		while quantity_to_trade > 0 {
-			let side_is_empty = if is_buy { self.asks.price_tree.len() == 0 } else { self.bids.price_tree.len() == 0 };
+			let side_is_empty = if is_buy { self.asks.prices_tree.len() == 0 } else { self.bids.prices_tree.len() == 0 };
 			if side_is_empty { break; }
 
 			let (best_price, mut best_price_queue) = {
@@ -374,7 +374,7 @@ impl OrderBook {
 			return false;
 		}
 		let mut cumulative_size = 0;
-		for level_price in self.asks.price_tree.iter() {
+		for level_price in self.asks.prices_tree.iter() {
 			if price > *level_price && cumulative_size < size {
 				cumulative_size = safe_add(cumulative_size, match self.asks.prices.get(level_price) {
 					Some(order_queue) => order_queue.volume,
@@ -398,7 +398,7 @@ impl OrderBook {
 
 		let mut cumulative_size = 0;
 
-		for level_price in self.bids.price_tree.iter() {
+		for level_price in self.bids.prices_tree.iter() {
 			if price <= *level_price && cumulative_size < size {
 				cumulative_size = safe_add(cumulative_size, match self.bids.prices.get(level_price) {
 					Some(order_queue) => order_queue.volume,
