@@ -32,6 +32,7 @@ impl OrderQueue {
     }
 
     pub fn is_empty(&self) -> bool { self.head.is_none() }
+    pub fn is_not_empty(&self) -> bool { self.head.is_some() }
     pub fn head(&self) -> Option<Uuid> { self.head }
     pub fn tail(&self) -> Option<Uuid> { self.tail }
 

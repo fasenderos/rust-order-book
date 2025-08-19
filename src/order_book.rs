@@ -87,7 +87,7 @@ impl OrderBook {
 
 			{
 				let side = self.get_opposite_order_side_mut(options.side);
-				if !best_price_queue.is_empty() {
+				if best_price_queue.is_not_empty() {
 					side.put_queue(best_price, best_price_queue);
 				}
 			}
@@ -151,7 +151,7 @@ impl OrderBook {
 
 			{
 				let side = self.get_opposite_order_side_mut(options.side);
-				if !best_price_queue.is_empty() {
+				if best_price_queue.is_not_empty() {
 					side.put_queue(best_price, best_price_queue);
 				}
 			}
@@ -245,7 +245,7 @@ impl OrderBook {
 
 		if let Some(mut queue) = q {			
 			let canceled_order = self.cancel_order(id, &mut queue);
-			if !queue.is_empty() {
+			if queue.is_not_empty() {
 				if side == Side::Buy {
 					self.bids.put_queue(price, queue);
 				} else {
@@ -305,7 +305,7 @@ impl OrderBook {
 		response.quantity_left = quantity_to_trade;
 
 		if response.quantity_left > 0 {
-			while !order_queue.is_empty() && response.quantity_left > 0 {
+			while order_queue.is_not_empty() && response.quantity_left > 0 {
 				let Some(head_order_uuid) = order_queue.head() else { break };
 				let (head_size, head_price) = match self.orders.get(&head_order_uuid) {
 					Some(o) => (o.size, o.price),
