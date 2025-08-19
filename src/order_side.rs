@@ -54,6 +54,10 @@ impl OrderSide {
         self.volume = safe_sub(self.volume, size);        
 	}
 
+    pub fn is_empty(&self) -> bool {
+        self.prices.is_empty()
+    }
+
     pub fn take_queue(&mut self, price: u128) -> Option<OrderQueue> {
         self.prices.remove(&price)
     }

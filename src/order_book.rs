@@ -67,7 +67,7 @@ impl OrderBook {
 		let is_buy = options.side == Side::Buy;
 
 		while quantity_to_trade > 0 {
-			let side_is_empty = if is_buy { self.asks.prices_tree.len() == 0 } else { self.bids.prices_tree.len() == 0 };
+			let side_is_empty = if is_buy { self.asks.is_empty() } else { self.bids.is_empty() };
 			if side_is_empty { break; }
 
 			let (best_price, mut best_price_queue) = {
@@ -123,7 +123,7 @@ impl OrderBook {
 		let is_buy = options.side == Side::Buy;
 		
 		while quantity_to_trade > 0 {
-			let side_is_empty = if is_buy { self.asks.prices_tree.len() == 0 } else { self.bids.prices_tree.len() == 0 };
+			let side_is_empty = if is_buy { self.asks.is_empty() } else { self.bids.is_empty() };
 			if side_is_empty { break; }
 
 			let (best_price, mut best_price_queue) = {
