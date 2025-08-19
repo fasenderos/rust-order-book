@@ -302,32 +302,32 @@ impl OrderBook {
 	}
 	fn process_queue<T>(&mut self, order_queue: &mut OrderQueue, quantity_to_trade: u128) -> ExecutionReport<T> {
 		let mut response = ExecutionReport::new();
-		response.quantity_left = quantity_to_trade;
+		let mut quantity_left = quantity_to_trade;
 
-		if response.quantity_left > 0 {
-			while order_queue.is_not_empty() && response.quantity_left > 0 {
+		if quantity_left > 0 {
+			while order_queue.is_not_empty() && quantity_left > 0 {
 				let Some(head_order_uuid) = order_queue.head() else { break };
 				let (head_qty, head_price) = match self.orders.get(&head_order_uuid) {
 					Some(o) => (o.quantity, o.price),
 					None => break
 				};
 				
-				if response.quantity_left < head_qty {
+				if quantity_left < head_qty {
 					{
 						match self.orders.get_mut(&head_order_uuid) {
 							Some(head_order) => {
-								head_order.quantity = safe_sub(head_order.quantity, response.quantity_left);
+								head_order.quantity = safe_sub(head_order.quantity, quantity_left);
 								let partial = head_order.clone();
 								response.partial = Some(partial);
-								response.partial_quantity_processed = response.quantity_left;
+								response.partial_quantity_processed = quantity_left;
 								order_queue.update(head_order_uuid, head_qty, partial.quantity);
 							}
 							None => break
 						}
 					}
-					response.quantity_left = 0;
+					quantity_left = 0;
 				} else {
-					response.quantity_left = safe_sub(response.quantity_left, head_qty);
+					quantity_left = safe_sub(quantity_left, head_qty);
 					if let Some(canceled_order) = self.cancel_order(head_order_uuid, order_queue) {
 						response.fills.push(canceled_order.order);
 					}
@@ -335,6 +335,7 @@ impl OrderBook {
 				self.market_price = head_price;				
 			}
 		}
+		response.quantity_left = quantity_left;
 		response
 	}
 
