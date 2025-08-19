@@ -112,6 +112,8 @@ impl OrderBook {
 	}
 
 	pub fn limit(&mut self, options: LimitOrderOptions) -> Result<ExecutionReport<LimitOrderOptions>> {
+		self.validate_limit_order(&options)?;
+
 		let time_in_force = options.time_in_force.unwrap_or_else(|| TimeInForce::GTC);
 		if time_in_force == TimeInForce::FOK {
 			if !self.limit_order_is_fillable(options.side, options.quantity, options.price) {
@@ -365,6 +367,19 @@ impl OrderBook {
 		}
 		if (options.side == Side::Buy && self.asks.is_empty()) || (options.side == Side::Sell && self.bids.is_empty()) {
 			return Err(make_error(ErrorType::OrderBookEmpty));
+		}
+		Ok(())
+	}
+
+	fn validate_limit_order(
+		&self,
+		options: &LimitOrderOptions,
+	) -> Result<()> {
+		if options.quantity == 0 {
+			return Err(make_error(ErrorType::InvalidQuantity));
+		}
+		if options.price == 0 {
+			return Err(make_error(ErrorType::InvalidPrice));
 		}
 		Ok(())
 	}
