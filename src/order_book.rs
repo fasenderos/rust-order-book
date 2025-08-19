@@ -61,6 +61,8 @@ impl OrderBook {
 	}
 
 	pub fn market(&mut self, options: MarketOrderOptions) -> Result<ExecutionReport<MarketOrderOptions>> {
+		self.validate_market_order(&options)?;
+
 		let mut response = ExecutionReport::new();
 
 		let mut quantity_to_trade = options.quantity;
@@ -300,6 +302,7 @@ impl OrderBook {
 		let bids = self.bids.depth(limit);
 		Depth { asks, bids }
 	}
+
 	fn process_queue<T>(&mut self, order_queue: &mut OrderQueue, quantity_to_trade: u128) -> ExecutionReport<T> {
 		let mut response = ExecutionReport::new();
 		let mut quantity_left = quantity_to_trade;
@@ -351,6 +354,19 @@ impl OrderBook {
 			return Some(ICancelOrder::new(old_order));			
 		}
 		None
+	}
+
+	fn validate_market_order(
+		&self,
+		options: &MarketOrderOptions,
+	) -> Result<()> {
+		if options.quantity == 0 {
+			return Err(make_error(ErrorType::InvalidQuantity));
+		}
+		if (options.side == Side::Buy && self.asks.is_empty()) || (options.side == Side::Sell && self.bids.is_empty()) {
+			return Err(make_error(ErrorType::OrderBookEmpty));
+		}
+		Ok(())
 	}
 
 	fn limit_order_is_fillable (

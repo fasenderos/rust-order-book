@@ -50,6 +50,7 @@ pub enum ErrorType {
     // 12xx Internal error
     InsufficientQuantity,
     InvalidPriceLevel,
+    OrderBookEmpty
 }
 
 impl ErrorType {
@@ -67,8 +68,9 @@ impl ErrorType {
             ErrorType::OrderNotFount => 1110,
         
             // 12xx Internal error
-            ErrorType::InsufficientQuantity => 1200,
-            ErrorType::InvalidPriceLevel => 1201,
+            ErrorType::OrderBookEmpty => 1200,
+            ErrorType::InsufficientQuantity => 1201,
+            ErrorType::InvalidPriceLevel => 1202,
         }
     }
 
@@ -85,6 +87,7 @@ impl ErrorType {
             ErrorType::OrderNotFount => "Order not found",
         
             // 12xx Internal error
+            ErrorType::OrderBookEmpty => "Order book is empty",
             ErrorType::InsufficientQuantity => "Insufficient quantity to calculate price",
             ErrorType::InvalidPriceLevel => "Invalid order price level",
         }

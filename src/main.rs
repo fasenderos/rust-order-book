@@ -37,7 +37,7 @@ fn main() {
         post_only: None
     });
 
-    println!("{:?}", limit);
+    // println!("{:?}", limit);
 
     let market_order = ob.market(MarketOrderOptions {
         side: Side::Buy,
@@ -45,6 +45,6 @@ fn main() {
     });
     
     println!("{}", ob);
-    println!("{}", ob.market_price);
+    // println!("{:?}", market_order);
     // println!("market order {}", market_order);
 }
