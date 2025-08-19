@@ -100,43 +100,44 @@ pub struct FillReport {
     pub order_id: Uuid,
     pub price: u128,
     pub quantity: u128,
+    pub status: OrderStatus,
 }
 
 #[derive(Debug)]
 pub struct ExecutionReport<OrderOptions> {
     pub order_id: Uuid,
-
     pub orig_qty: u128,
-
     pub executed_qty: u128,
-    
     pub remaining_qty: u128,
-
+    pub taker_qty: u128,
+    pub maker_qty: u128,
     pub order_type: OrderType,
-    
     pub side: Side,
-	
     pub price: u128,
-    /** Array of fully processed orders. */
+    pub status: OrderStatus,
+    pub time_in_force: TimeInForce,
+    /** Array of processed orders. */
     pub fills: Vec<FillReport>,
-    /** The quantity that has been processed in the partial order. */
-	pub partial_quantity_processed: u128,
     /** Optional journal log entry related to the order processing. */
 	pub log: Option<JournalLog<OrderOptions>>	
 }
 
 impl<T> ExecutionReport<T> {
-    pub fn new(id: Uuid, order_type: OrderType, side: Side, quantity: u128, price: u128) -> ExecutionReport<T> {
+    pub fn new(id: Uuid, order_type: OrderType, side: Side, quantity: u128, status: OrderStatus, time_in_force: Option<TimeInForce>, price: Option<u128>) -> ExecutionReport<T> {
         ExecutionReport {
             order_id: id,
             orig_qty: quantity,
             executed_qty: 0,
             remaining_qty: quantity,
+            status,
+            taker_qty: 0,
+            maker_qty: 0,
             order_type,
             side,
-            price,
+            price: price.unwrap_or(0),
+            // market order are alway IOC
+            time_in_force: if order_type == OrderType::Market { TimeInForce::IOC } else { get_order_time_in_force(time_in_force) },
             fills: Vec::new(),
-            partial_quantity_processed: 0,
             log: None
         }
     }
