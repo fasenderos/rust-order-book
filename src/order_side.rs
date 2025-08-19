@@ -34,24 +34,24 @@ impl OrderSide {
     }
 
     // appends order to definite price level
-    pub fn append (&mut self, id: Uuid, size: u128, price: u128) {
+    pub fn append (&mut self, id: Uuid, quantity: u128, price: u128) {
         let queue = self.prices.entry(price).or_insert_with(|| {
             self.prices_tree.insert(price);
             OrderQueue::new(price)
         });
 
-		self.volume = safe_add(self.volume, size);        
-        queue.append(id, size);
+		self.volume = safe_add(self.volume, quantity);        
+        queue.append(id, quantity);
     }
 
     // removes order from definite price level
-	pub fn remove (&mut self, id: Uuid, size: u128, price: u128, queue: &mut OrderQueue) {
-        queue.remove(id, size);
+	pub fn remove (&mut self, id: Uuid, quantity: u128, price: u128, queue: &mut OrderQueue) {
+        queue.remove(id, quantity);
         if queue.is_empty() {
             self.prices.remove(&price);
             self.prices_tree.remove(&price);
         }
-        self.volume = safe_sub(self.volume, size);        
+        self.volume = safe_sub(self.volume, quantity);        
 	}
 
     pub fn is_empty(&self) -> bool {

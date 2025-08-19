@@ -7,7 +7,7 @@ fn main() {
     
     let _ = ob.limit(LimitOrderOptions {
         side: Side::Buy,
-        size: 100,
+        quantity: 100,
         price: 50,
         time_in_force: None,
         post_only: None
@@ -15,7 +15,7 @@ fn main() {
 
     let _ = ob.limit(LimitOrderOptions {
         side: Side::Sell,
-        size: 80,
+        quantity: 80,
         price: 70,
         time_in_force: None,
         post_only: None
@@ -23,7 +23,7 @@ fn main() {
 
     let _ = ob.limit(LimitOrderOptions {
         side: Side::Sell,
-        size: 80,
+        quantity: 80,
         price: 60,
         time_in_force: None,
         post_only: None
@@ -31,7 +31,7 @@ fn main() {
     
     let limit = ob.limit(LimitOrderOptions {
         side: Side::Buy,
-        size: 90,
+        quantity: 90,
         price: 40,
         time_in_force: None,
         post_only: None
@@ -41,7 +41,7 @@ fn main() {
 
     let market_order = ob.market(MarketOrderOptions {
         side: Side::Buy,
-        size: 123,
+        quantity: 123,
     });
     
     println!("{}", ob);
