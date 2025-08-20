@@ -6,7 +6,7 @@ use crate::{
     enums::{ OrderStatus, OrderType, Side, TimeInForce }
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MarketOrderOptions {
     pub side: Side,
     pub quantity: u128,

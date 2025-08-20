@@ -1,36 +1,3 @@
-//! Error module for the orderbook: typed error with (code, message)
-//!
-//! - Use `ErrorType` when you know the semantic category
-//! - Use `OrderBookError` as the concrete error type
-//! - Format: Display -> "[{code}] {message}"
-//!
-//! Quick start:
-//! ```rust
-//! use crate::error::{Result, OrderBookError, ErrorType, make_error, lib_err};
-//!
-//! fn demo() -> Result<()> {
-//!     // from semantic type
-//!     let e1: OrderBookError = ErrorType::InvalidPrice.into();
-//!     assert_eq!(e1.code, 1103);
-//!     assert_eq!(e1.to_string(), "[1103] Invalid order price");
-//!
-//!     // from numeric code
-//!     let e2 = OrderBookError::from_code(1110);
-//!     assert_eq!(e2.to_string(), "[1110] Order not found");
-//!
-//!     // from custom message (default code 1000)
-//!     let e3 = OrderBookError::from_message("something happened");
-//!     assert_eq!(e3.to_string(), "[1000] something happened");
-//!
-//!     // utility that accepts code OR message OR ErrorType
-//!     let _ = make_error(404u32);
-//!     let _ = make_error("free-form message");
-//!     let _ = make_error(ErrorType::OrderNotFount);
-//!
-//!     Ok(())
-//! }
-//! ```
-
 use std::borrow::Cow;
 use thiserror::Error;
 
@@ -45,7 +12,10 @@ pub enum ErrorType {
     InvalidPriceOrQuantity,
     InvalidQuantity,
     OrderAlredyExists,
-    OrderNotFount,
+    OrderNotFound,
+    OrderPostOnly,
+    OrderIOC,
+    OrderFOK,
     
     // 12xx Internal error
     InsufficientQuantity,
@@ -61,11 +31,14 @@ impl ErrorType {
             ErrorType::Default => 1000,
         
             // 11xx Request issues
-            ErrorType::InvalidQuantity => 1102,
-            ErrorType::InvalidPrice => 1103,
-            ErrorType::InvalidPriceOrQuantity => 1104,
+            ErrorType::InvalidQuantity => 1101,
+            ErrorType::InvalidPrice => 1102,
+            ErrorType::InvalidPriceOrQuantity => 1103,
+            ErrorType::OrderPostOnly => 1104,
+            ErrorType::OrderIOC => 1105,
+            ErrorType::OrderFOK => 1106,
             ErrorType::OrderAlredyExists => 1109,
-            ErrorType::OrderNotFount => 1110,
+            ErrorType::OrderNotFound => 1110,
         
             // 12xx Internal error
             ErrorType::OrderBookEmpty => 1200,
@@ -78,13 +51,17 @@ impl ErrorType {
     pub const fn message(self) -> &'static str {
         match self {
             // 10xx General issues
-            ErrorType::Default => "Something wrong",    
+            ErrorType::Default => "Something wrong",
+
             // 11xx Request issues
             ErrorType::InvalidQuantity => "Invalid order quantity",
             ErrorType::InvalidPrice => "Invalid order price",
             ErrorType::InvalidPriceOrQuantity => "Invalid order price or quantity",
+            ErrorType::OrderPostOnly => "Post Only order rejected: would execute immediately against existing orders",
+            ErrorType::OrderIOC => "IOC order rejected: no immediate liquidity available at requested price",
+            ErrorType::OrderFOK => "FOK order rejected: unable to fill entire quantity immediately",
             ErrorType::OrderAlredyExists => "Order already exists",
-            ErrorType::OrderNotFount => "Order not found",
+            ErrorType::OrderNotFound => "Order not found",
         
             // 12xx Internal error
             ErrorType::OrderBookEmpty => "Order book is empty",
@@ -142,11 +119,14 @@ pub fn default_message_for_code(code: u32) -> Cow<'static, str> {
         1000 => Cow::Borrowed(ErrorType::Default.message()),
 
         // 11xx Request issues
-        1102 => Cow::Borrowed(ErrorType::InvalidQuantity.message()),
-        1103 => Cow::Borrowed(ErrorType::InvalidPrice.message()),
-        1104 => Cow::Borrowed(ErrorType::InvalidPriceOrQuantity.message()),
+        1101 => Cow::Borrowed(ErrorType::InvalidQuantity.message()),
+        1102 => Cow::Borrowed(ErrorType::InvalidPrice.message()),
+        1103 => Cow::Borrowed(ErrorType::InvalidPriceOrQuantity.message()),
+        1104 => Cow::Borrowed(ErrorType::OrderPostOnly.message()),
+        1105 => Cow::Borrowed(ErrorType::OrderIOC.message()),
+        1106 => Cow::Borrowed(ErrorType::OrderFOK.message()),
         1109 => Cow::Borrowed(ErrorType::OrderAlredyExists.message()),
-        1110 => Cow::Borrowed(ErrorType::OrderNotFount.message()),
+        1110 => Cow::Borrowed(ErrorType::OrderNotFound.message()),
 
         // 12xx Internal error
         1200 => Cow::Borrowed(ErrorType::InsufficientQuantity.message()),
@@ -214,11 +194,14 @@ mod tests {
     fn test_error_type_codes_and_messages() {
         let cases = vec![
             (ErrorType::Default, 1000, "Something wrong"),
-            (ErrorType::InvalidQuantity, 1102, "Invalid order quantity"),
-            (ErrorType::InvalidPrice, 1103, "Invalid order price"),
-            (ErrorType::InvalidPriceOrQuantity, 1104, "Invalid order price or quantity"),
+            (ErrorType::InvalidQuantity, 1101, "Invalid order quantity"),
+            (ErrorType::InvalidPrice, 1102, "Invalid order price"),
+            (ErrorType::InvalidPriceOrQuantity, 1103, "Invalid order price or quantity"),
+            (ErrorType::OrderPostOnly, 1104, "Post Only order rejected: would execute immediately against existing orders"),
+            (ErrorType::OrderIOC, 1105, "IOC order rejected: no immediate liquidity available at requested price"),
+            (ErrorType::OrderFOK, 1106, "FOK order rejected: unable to fill entire quantity immediately"),
             (ErrorType::OrderAlredyExists, 1109, "Order already exists"),
-            (ErrorType::OrderNotFount, 1110, "Order not found"),
+            (ErrorType::OrderNotFound, 1110, "Order not found"),
             (ErrorType::OrderBookEmpty, 1200, "Order book is empty"),
             (ErrorType::InsufficientQuantity, 1201, "Insufficient quantity to calculate price"),
             (ErrorType::InvalidPriceLevel, 1202, "Invalid order price level"),
@@ -247,9 +230,24 @@ mod tests {
     }
 
     #[test]
+    fn test_default_message_for_code() {
+        assert_eq!(default_message_for_code(1000), ErrorType::Default.message());
+        assert_eq!(default_message_for_code(1101), ErrorType::InvalidQuantity.message());
+        assert_eq!(default_message_for_code(1102), ErrorType::InvalidPrice.message());
+        assert_eq!(default_message_for_code(1103), ErrorType::InvalidPriceOrQuantity.message());
+        assert_eq!(default_message_for_code(1104), ErrorType::OrderPostOnly.message());
+        assert_eq!(default_message_for_code(1105), ErrorType::OrderIOC.message());
+        assert_eq!(default_message_for_code(1106), ErrorType::OrderFOK.message());
+        assert_eq!(default_message_for_code(1109), ErrorType::OrderAlredyExists.message());
+        assert_eq!(default_message_for_code(1110), ErrorType::OrderNotFound.message());
+        assert_eq!(default_message_for_code(1200), ErrorType::InsufficientQuantity.message());
+        assert_eq!(default_message_for_code(1201), ErrorType::InvalidPriceLevel.message());
+    }
+
+    #[test]
     fn test_order_book_error_from_code_known() {
-        let err = OrderBookError::from_code(1103);
-        assert_eq!(err.code, 1103);
+        let err = OrderBookError::from_code(1102);
+        assert_eq!(err.code, 1102);
         assert_eq!(err.message, "Invalid order price");
     }
 
@@ -269,15 +267,15 @@ mod tests {
 
     #[test]
     fn test_order_book_error_with_message() {
-        let err = OrderBookError::new(1102, "Old")
+        let err = OrderBookError::new(1101, "Old")
             .with_message("New");
-        assert_eq!(err.code, 1102);
+        assert_eq!(err.code, 1101);
         assert_eq!(err.message, "New");
     }
 
     #[test]
     fn test_default_message_for_code_known() {
-        assert_eq!(default_message_for_code(1102), "Invalid order quantity");
+        assert_eq!(default_message_for_code(1101), "Invalid order quantity");
     }
 
     #[test]
@@ -316,9 +314,9 @@ mod tests {
     #[test]
     fn test_make_error_utility() {
         let err1 = make_error(ErrorType::InvalidQuantity);
-        assert_eq!(err1.code, 1102);
+        assert_eq!(err1.code, 1101);
 
-        let err2 = make_error(1104u32);
+        let err2 = make_error(1103u32);
         assert_eq!(err2.message, "Invalid order price or quantity");
 
         let err3 = make_error("Oops");
