@@ -1,5 +1,4 @@
-use std::borrow::Cow;
-use thiserror::Error;
+use std::{borrow::Cow, fmt};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 #[non_exhaustive]
@@ -16,11 +15,11 @@ pub(crate) enum ErrorType {
     OrderPostOnly,
     OrderIOC,
     OrderFOK,
-    
+
     // 12xx Internal error
     InsufficientQuantity,
     InvalidPriceLevel,
-    OrderBookEmpty
+    OrderBookEmpty,
 }
 
 impl ErrorType {
@@ -29,7 +28,7 @@ impl ErrorType {
         match self {
             // 10xx General issues
             ErrorType::Default => 1000,
-        
+
             // 11xx Request issues
             ErrorType::InvalidQuantity => 1101,
             ErrorType::InvalidPrice => 1102,
@@ -39,7 +38,7 @@ impl ErrorType {
             ErrorType::OrderFOK => 1106,
             ErrorType::OrderAlredyExists => 1109,
             ErrorType::OrderNotFound => 1110,
-        
+
             // 12xx Internal error
             ErrorType::OrderBookEmpty => 1200,
             ErrorType::InsufficientQuantity => 1201,
@@ -57,12 +56,16 @@ impl ErrorType {
             ErrorType::InvalidQuantity => "Invalid order quantity",
             ErrorType::InvalidPrice => "Invalid order price",
             ErrorType::InvalidPriceOrQuantity => "Invalid order price or quantity",
-            ErrorType::OrderPostOnly => "Post Only order rejected: would execute immediately against existing orders",
-            ErrorType::OrderIOC => "IOC order rejected: no immediate liquidity available at requested price",
+            ErrorType::OrderPostOnly => {
+                "Post Only order rejected: would execute immediately against existing orders"
+            }
+            ErrorType::OrderIOC => {
+                "IOC order rejected: no immediate liquidity available at requested price"
+            }
             ErrorType::OrderFOK => "FOK order rejected: unable to fill entire quantity immediately",
             ErrorType::OrderAlredyExists => "Order already exists",
             ErrorType::OrderNotFound => "Order not found",
-        
+
             // 12xx Internal error
             ErrorType::OrderBookEmpty => "Order book is empty",
             ErrorType::InsufficientQuantity => "Insufficient quantity to calculate price",
@@ -74,8 +77,7 @@ impl ErrorType {
 /// Concrete error type carrying both code and message.
 ///
 /// `Display` renders as `"[{code}] {message}"`.
-#[derive(Debug, Error, Clone, Eq, PartialEq)]
-#[error("[{code}] {message}")]
+#[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct OrderBookError {
     pub code: u32,
@@ -107,6 +109,12 @@ impl OrderBookError {
     pub fn with_message(mut self, message: impl Into<String>) -> Self {
         self.message = message.into();
         self
+    }
+}
+
+impl fmt::Display for OrderBookError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)
     }
 }
 
@@ -197,9 +205,21 @@ mod tests {
             (ErrorType::InvalidQuantity, 1101, "Invalid order quantity"),
             (ErrorType::InvalidPrice, 1102, "Invalid order price"),
             (ErrorType::InvalidPriceOrQuantity, 1103, "Invalid order price or quantity"),
-            (ErrorType::OrderPostOnly, 1104, "Post Only order rejected: would execute immediately against existing orders"),
-            (ErrorType::OrderIOC, 1105, "IOC order rejected: no immediate liquidity available at requested price"),
-            (ErrorType::OrderFOK, 1106, "FOK order rejected: unable to fill entire quantity immediately"),
+            (
+                ErrorType::OrderPostOnly,
+                1104,
+                "Post Only order rejected: would execute immediately against existing orders",
+            ),
+            (
+                ErrorType::OrderIOC,
+                1105,
+                "IOC order rejected: no immediate liquidity available at requested price",
+            ),
+            (
+                ErrorType::OrderFOK,
+                1106,
+                "FOK order rejected: unable to fill entire quantity immediately",
+            ),
             (ErrorType::OrderAlredyExists, 1109, "Order already exists"),
             (ErrorType::OrderNotFound, 1110, "Order not found"),
             (ErrorType::OrderBookEmpty, 1200, "Order book is empty"),
@@ -267,8 +287,7 @@ mod tests {
 
     #[test]
     fn test_order_book_error_with_message() {
-        let err = OrderBookError::new(1101, "Old")
-            .with_message("New");
+        let err = OrderBookError::new(1101, "Old").with_message("New");
         assert_eq!(err.code, 1101);
         assert_eq!(err.message, "New");
     }
@@ -326,4 +345,3 @@ mod tests {
         assert_eq!(err4.message, "Boom");
     }
 }
-

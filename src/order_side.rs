@@ -1,12 +1,12 @@
-use std::fmt;
-use std::cmp::Ordering;
-use std::collections::{HashMap};
 use rb_tree::RBQueue;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::fmt;
 use uuid::Uuid;
 
+use crate::enums::Side;
 use crate::math::math::{safe_add, safe_sub};
 use crate::order_queue::OrderQueue;
-use crate::enums::{Side};
 
 #[derive(Debug)]
 pub(crate) struct OrderSide {
@@ -21,11 +21,11 @@ impl OrderSide {
         let side_for_cmp = side;
         let comparator = move |a: &u128, b: &u128| {
             match side_for_cmp {
-                Side::Sell => a.cmp(b),  // ordine crescente
-                Side::Buy => b.cmp(a),   // ordine decrescente
+                Side::Sell => a.cmp(b), // ordine crescente
+                Side::Buy => b.cmp(a),  // ordine decrescente
             }
         };
-        OrderSide { 
+        OrderSide {
             side,
             prices: HashMap::new(),
             prices_tree: RBQueue::new(Box::new(comparator)),
@@ -34,25 +34,25 @@ impl OrderSide {
     }
 
     // appends order to definite price level
-    pub fn append (&mut self, id: Uuid, quantity: u128, price: u128) {
+    pub fn append(&mut self, id: Uuid, quantity: u128, price: u128) {
         let queue = self.prices.entry(price).or_insert_with(|| {
             self.prices_tree.insert(price);
             OrderQueue::new(price)
         });
 
-		self.volume = safe_add(self.volume, quantity);        
+        self.volume = safe_add(self.volume, quantity);
         queue.append(id, quantity);
     }
 
     // removes order from definite price level
-	pub fn remove (&mut self, id: Uuid, quantity: u128, price: u128, queue: &mut OrderQueue) {
+    pub fn remove(&mut self, id: Uuid, quantity: u128, price: u128, queue: &mut OrderQueue) {
         queue.remove(id, quantity);
         if queue.is_empty() {
             self.prices.remove(&price);
             self.prices_tree.remove(&price);
         }
-        self.volume = safe_sub(self.volume, quantity);        
-	}
+        self.volume = safe_sub(self.volume, quantity);
+    }
 
     pub fn is_empty(&self) -> bool {
         self.prices.is_empty()
@@ -114,8 +114,7 @@ impl fmt::Display for OrderSide {
         for price in iter {
             let queue = self.prices.get(&price)
                 .expect(format!("[fmt::Display]: In OrderSide {:?} the price {} is in price_tree but is missing in the prices map", self.side, price).as_str());
-            writeln!(f, "{} -> {}", price, queue.volume)
-                .expect("Failed to write to formatter");       
+            writeln!(f, "{} -> {}", price, queue.volume).expect("Failed to write to formatter");
         }
 
         Ok(())
@@ -124,10 +123,11 @@ impl fmt::Display for OrderSide {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::new_order_id;
+
     use super::*;
-    use rand::seq::SliceRandom;
     use rand::rng;
-    use uuid::Uuid;
+    use rand::seq::SliceRandom;
 
     fn create_orderside(side: Side) -> OrderSide {
         OrderSide::new(side)
@@ -137,8 +137,8 @@ mod tests {
     fn test_append_and_remove() {
         let mut os = create_orderside(Side::Buy);
         let price = 1000;
-        let id1 = Uuid::new_v4();
-        let id2 = Uuid::new_v4();
+        let id1 = new_order_id();
+        let id2 = new_order_id();
 
         os.append(id1, 50, price);
         os.append(id2, 70, price);
@@ -160,9 +160,9 @@ mod tests {
     #[test]
     fn test_best_min_max_price() {
         let mut os = create_orderside(Side::Sell);
-        os.append(Uuid::new_v4(), 10, 100);
-        os.append(Uuid::new_v4(), 20, 200);
-        os.append(Uuid::new_v4(), 30, 150);
+        os.append(new_order_id(), 10, 100);
+        os.append(new_order_id(), 20, 200);
+        os.append(new_order_id(), 30, 150);
 
         assert_eq!(os.min_price(), Some(100));
         assert_eq!(os.max_price(), Some(200));
@@ -173,9 +173,9 @@ mod tests {
     #[test]
     fn test_depth() {
         let mut os = create_orderside(Side::Buy);
-        os.append(Uuid::new_v4(), 10, 100);
-        os.append(Uuid::new_v4(), 20, 200);
-        os.append(Uuid::new_v4(), 30, 150);
+        os.append(new_order_id(), 10, 100);
+        os.append(new_order_id(), 20, 200);
+        os.append(new_order_id(), 30, 150);
 
         let d = os.depth(2);
         assert_eq!(d.len(), 2);
@@ -186,8 +186,8 @@ mod tests {
     #[test]
     fn test_display_buy() {
         let mut side = OrderSide::new(Side::Buy);
-        side.append(Uuid::new_v4(), 100, 10);
-        side.append(Uuid::new_v4(), 200, 20);
+        side.append(new_order_id(), 100, 10);
+        side.append(new_order_id(), 200, 20);
 
         let output = format!("{}", side);
         assert!(output.contains("10 -> 100"));
@@ -197,8 +197,8 @@ mod tests {
     #[test]
     fn test_display_sell() {
         let mut side = OrderSide::new(Side::Sell);
-        side.append(Uuid::new_v4(), 50, 5);
-        side.append(Uuid::new_v4(), 150, 15);
+        side.append(new_order_id(), 50, 5);
+        side.append(new_order_id(), 150, 15);
 
         let output = format!("{}", side);
         // Per Side::Sell l'iteratore viene invertito
@@ -221,7 +221,7 @@ mod tests {
 
         // aggiungo 1000 ordini su prezzi casuali tra 100..200
         for _ in 0..1000 {
-            let id = Uuid::new_v4();
+            let id = new_order_id();
             let qty = rand::random::<u128>() % 500 + 1;
             let price = 100 + rand::random::<u128>() % 100;
             os.append(id, qty, price);
@@ -236,9 +236,8 @@ mod tests {
             let mut queue = queue.unwrap();
             let new_qty = rand::random::<u128>() % 500 + 1;
             queue.update(*id, 0, new_qty); // aggiorna quantità
-            
+
             os.put_queue(*price, queue);
-            
         }
 
         // rimuovo tutti gli ordini in ordine casuale

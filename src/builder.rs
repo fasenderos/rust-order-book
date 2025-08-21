@@ -28,10 +28,7 @@ impl OrderBookBuilder {
     /// # Parameters
     /// - `symbol`: The market symbol (e.g., `"BTCUSD"`)
     pub fn new(symbol: impl Into<String>) -> Self {
-        Self {
-            symbol: symbol.into(),
-            options: OrderBookOptions::default(),
-        }
+        Self { symbol: symbol.into(), options: OrderBookOptions::default() }
     }
 
     /// Sets all options in bulk via an [`OrderBookOptions`] struct.
@@ -62,7 +59,7 @@ impl OrderBookBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;    
+    use super::*;
 
     #[test]
     fn test_builder_with_defaults() {
@@ -73,9 +70,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_journaling_enabled() {
-        let ob = OrderBookBuilder::new("ETHUSD")
-            .with_journaling(true)
-            .build();
+        let ob = OrderBookBuilder::new("ETHUSD").with_journaling(true).build();
 
         assert_eq!(ob.symbol, "ETHUSD");
         assert!(ob.journaling);
@@ -83,14 +78,9 @@ mod tests {
 
     #[test]
     fn test_builder_with_options_struct() {
-        let opts = OrderBookOptions {
-            journaling: true,
-            ..Default::default()
-        };
+        let opts = OrderBookOptions { journaling: true, ..Default::default() };
 
-        let ob = OrderBookBuilder::new("DOGEUSD")
-            .with_options(opts.clone())
-            .build();
+        let ob = OrderBookBuilder::new("DOGEUSD").with_options(opts.clone()).build();
 
         assert_eq!(ob.symbol, "DOGEUSD");
         assert_eq!(ob.journaling, opts.journaling);

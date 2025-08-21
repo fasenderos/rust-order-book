@@ -1,16 +1,16 @@
 // TODO REMOVE THIS FILE, IT'S JUST FOR TESTING
 
-use rust_order_book::{OrderBookBuilder, LimitOrderOptions, MarketOrderOptions, Side};
+use rust_order_book::{LimitOrderOptions, MarketOrderOptions, OrderBookBuilder, Side};
 
 fn main() {
     let mut ob = OrderBookBuilder::new("BTC-USD").build();
-    
+
     let _ = ob.limit(LimitOrderOptions {
         side: Side::Buy,
         quantity: 100,
         price: 50,
         time_in_force: None,
-        post_only: None
+        post_only: None,
     });
 
     let _ = ob.limit(LimitOrderOptions {
@@ -18,7 +18,7 @@ fn main() {
         quantity: 80,
         price: 70,
         time_in_force: None,
-        post_only: None
+        post_only: None,
     });
 
     let _ = ob.limit(LimitOrderOptions {
@@ -26,24 +26,21 @@ fn main() {
         quantity: 80,
         price: 60,
         time_in_force: None,
-        post_only: None
+        post_only: None,
     });
-    
+
     let limit = ob.limit(LimitOrderOptions {
         side: Side::Buy,
         quantity: 90,
         price: 40,
         time_in_force: None,
-        post_only: None
+        post_only: None,
     });
 
     // println!("{:?}", limit);
 
-    let market_order = ob.market(MarketOrderOptions {
-        side: Side::Buy,
-        quantity: 123,
-    });
-    
+    let market_order = ob.market(MarketOrderOptions { side: Side::Buy, quantity: 123 });
+
     println!("{}", ob);
     println!("{:?}", market_order);
     // println!("market order {}", market_order);

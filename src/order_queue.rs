@@ -1,4 +1,4 @@
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::math::math::{safe_add, safe_add_sub, safe_sub};
@@ -7,7 +7,7 @@ use crate::math::math::{safe_add, safe_add_sub, safe_sub};
 struct Node {
     prev: Option<Uuid>,
     next: Option<Uuid>,
-    quantity: u128
+    quantity: u128,
 }
 
 #[derive(Debug)]
@@ -16,33 +16,40 @@ pub(crate) struct OrderQueue {
     pub volume: u128,
     head: Option<Uuid>,
     tail: Option<Uuid>,
-    nodes: HashMap<Uuid, Node>
+    nodes: HashMap<Uuid, Node>,
 }
 
 impl OrderQueue {
     pub fn new(price: u128) -> OrderQueue {
-        OrderQueue { 
-            price,
-            volume: 0,
-            head: None,
-            tail: None,
-            nodes: HashMap::new()
-        }
+        OrderQueue { price, volume: 0, head: None, tail: None, nodes: HashMap::new() }
     }
 
-    pub fn is_empty(&self) -> bool { self.head.is_none() }
-    pub fn is_not_empty(&self) -> bool { self.head.is_some() }
-    pub fn head(&self) -> Option<Uuid> { self.head }
-    pub fn tail(&self) -> Option<Uuid> { self.tail }
+    pub fn is_empty(&self) -> bool {
+        self.head.is_none()
+    }
+    pub fn is_not_empty(&self) -> bool {
+        self.head.is_some()
+    }
+    pub fn head(&self) -> Option<Uuid> {
+        self.head
+    }
+    pub fn tail(&self) -> Option<Uuid> {
+        self.tail
+    }
 
     /// Add the order id to the tail of the queue
     pub fn append(&mut self, id: Uuid, quantity: u128) {
         let new = Node { prev: self.tail, next: None, quantity };
         self.volume = safe_add(self.volume, quantity);
-        
+
         if let Some(tail_id) = self.tail {
-            let tail_node = self.nodes.get_mut(&tail_id)
-                .expect(format!("OrderQueue on price {} is broken: tail_id {} not in nodes", self.price, tail_id).as_str());
+            let tail_node = self.nodes.get_mut(&tail_id).expect(
+                format!(
+                    "OrderQueue on price {} is broken: tail_id {} not in nodes",
+                    self.price, tail_id
+                )
+                .as_str(),
+            );
             tail_node.next = Some(id);
         } else {
             // First element
@@ -54,12 +61,12 @@ impl OrderQueue {
     }
 
     // sets up new order to list value
-    pub fn update (&mut self, id: Uuid, old_quantity: u128, new_quantity: u128) {
+    pub fn update(&mut self, id: Uuid, old_quantity: u128, new_quantity: u128) {
         if let Some(node) = self.nodes.get_mut(&id) {
             self.volume = safe_add_sub(self.volume, new_quantity, old_quantity);
             node.quantity = new_quantity;
         }
-	}
+    }
 
     /// removes order from the queue
     pub fn remove(&mut self, id: Uuid, quantity: u128) {
@@ -94,12 +101,12 @@ impl OrderQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
-    use rand::seq::SliceRandom;
+    use crate::utils::new_order_id;
     use rand::rng;
+    use rand::seq::SliceRandom;
 
     fn make_uuid() -> Uuid {
-        Uuid::new_v4()
+        new_order_id()
     }
 
     fn iter_ids(queue: &OrderQueue) -> Vec<Uuid> {
@@ -262,7 +269,7 @@ mod tests {
 
         // inserisco 1000 ordini con quantità = indice+1
         for i in 0..n {
-            let id = Uuid::new_v4();
+            let id = new_order_id();
             q.append(id, (i + 1) as u128);
             ids.push(id);
         }
@@ -290,7 +297,7 @@ mod tests {
 
         // aggiungo 500 ordini con quantità casuale 1..1000
         for _ in 0..500 {
-            let id = Uuid::new_v4();
+            let id = new_order_id();
             let qty = rand::random::<u128>() % 1000 + 1;
             q.append(id, qty);
             ids.push((id, qty));
@@ -320,7 +327,7 @@ mod tests {
 
         // aggiungo 300 ordini con quantità casuale 1..500
         for _ in 0..300 {
-            let id = Uuid::new_v4();
+            let id = new_order_id();
             let qty = rand::random::<u128>() % 500 + 1;
             q.append(id, qty);
             ids.push((id, qty));
@@ -335,7 +342,7 @@ mod tests {
             let new_qty = rand::random::<u128>() % 500 + 1;
             q.update(*id, *old_qty, new_qty);
             // aggiorno anche la quantità locale per il calcolo volume
-            
+
             let pos = ids.iter().position(|(i, _)| i == id);
             ids[pos.unwrap()].1 = new_qty;
         }

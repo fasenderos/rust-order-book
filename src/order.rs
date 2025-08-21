@@ -4,11 +4,11 @@
 //! Users will not need to interact with internal structs like [`MarketOrder`]
 //! or [`LimitOrder`] directly.
 
-use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
-    OrderStatus, OrderType, Side, TimeInForce
+    utils::{current_timestamp_millis, new_order_id},
+    OrderStatus, OrderType, Side, TimeInForce,
 };
 
 /// Options for submitting a market order to the order book.
@@ -69,7 +69,7 @@ pub struct LimitOrderOptions {
     pub quantity: u128,
     pub price: u128,
     pub time_in_force: Option<TimeInForce>,
-    pub post_only: Option<bool>
+    pub post_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -101,7 +101,7 @@ impl LimitOrder {
             order_type: OrderType::Limit,
             time: get_order_time(None),
             time_in_force: get_order_time_in_force(options.time_in_force),
-            post_only: options.post_only.unwrap_or( false),
+            post_only: options.post_only.unwrap_or(false),
             taker_qty: 0,
             maker_qty: 0,
             status: OrderStatus::New,
@@ -110,11 +110,11 @@ impl LimitOrder {
 }
 
 fn get_order_id(id: Option<Uuid>) -> Uuid {
-    id.unwrap_or_else(|| Uuid::new_v4())
+    id.unwrap_or_else(|| new_order_id())
 }
 
 fn get_order_time(time: Option<i64>) -> i64 {
-    time.unwrap_or_else(|| Utc::now().timestamp_millis())
+    time.unwrap_or_else(|| current_timestamp_millis())
 }
 
 pub(crate) fn get_order_time_in_force(time_in_force: Option<TimeInForce>) -> TimeInForce {
@@ -129,10 +129,7 @@ mod tests {
 
     #[test]
     fn test_market_order_new() {
-        let opts = MarketOrderOptions {
-            side: Side::Buy,
-            quantity: 100,
-        };
+        let opts = MarketOrderOptions { side: Side::Buy, quantity: 100 };
         let order = MarketOrder::new(opts);
 
         assert_eq!(order.side, Side::Buy);
@@ -183,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_execution_report_market_force_ioc() {
-        let id = Uuid::new_v4();
+        let id = new_order_id();
         let report: ExecutionReport<()> = ExecutionReport::new(
             id,
             OrderType::Market,
@@ -192,7 +189,7 @@ mod tests {
             OrderStatus::New,
             Some(TimeInForce::GTC), // dovrebbe ignorarlo
             Some(123),
-            false
+            false,
         );
 
         assert_eq!(report.order_id, id);
@@ -205,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_execution_report_limit_inherits_tif() {
-        let id = Uuid::new_v4();
+        let id = new_order_id();
         let report: ExecutionReport<()> = ExecutionReport::new(
             id,
             OrderType::Limit,
@@ -214,7 +211,7 @@ mod tests {
             OrderStatus::New,
             Some(TimeInForce::FOK),
             None,
-            false
+            false,
         );
 
         assert_eq!(report.time_in_force, TimeInForce::FOK);
@@ -223,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_get_order_id_provided() {
-        let id = Uuid::new_v4();
+        let id = get_order_id(None);
         let result = get_order_id(Some(id));
         assert_eq!(result, id);
     }

@@ -5,8 +5,10 @@
 //!
 //! These types are used to track the outcome of submitted market or limit orders,
 //! including how much was executed, any remaining quantity, and the resulting trades.
+use crate::{
+    journal::JournalLog, order::get_order_time_in_force, OrderStatus, OrderType, Side, TimeInForce,
+};
 use uuid::Uuid;
-use crate::{journal::JournalLog, order::get_order_time_in_force, OrderStatus, OrderType, Side, TimeInForce};
 
 /// A report for an individual fill that occurred during order execution.
 ///
@@ -67,7 +69,7 @@ pub struct ExecutionReport<OrderOptions> {
     pub time_in_force: TimeInForce,
     pub post_only: bool,
     pub fills: Vec<FillReport>,
-	pub log: Option<JournalLog<OrderOptions>>	
+    pub log: Option<JournalLog<OrderOptions>>,
 }
 
 impl<T> ExecutionReport<T> {
@@ -84,7 +86,16 @@ impl<T> ExecutionReport<T> {
     /// - `time_in_force`: Optional TIF value (e.g., GTC, IOC)
     /// - `price`: Optional limit price (or placeholder for market orders)
     /// - `post_only`: Whether the order was post-only
-    pub fn new(id: Uuid, order_type: OrderType, side: Side, quantity: u128, status: OrderStatus, time_in_force: Option<TimeInForce>, price: Option<u128>, post_only: bool) -> ExecutionReport<T> {
+    pub fn new(
+        id: Uuid,
+        order_type: OrderType,
+        side: Side,
+        quantity: u128,
+        status: OrderStatus,
+        time_in_force: Option<TimeInForce>,
+        price: Option<u128>,
+        post_only: bool,
+    ) -> ExecutionReport<T> {
         ExecutionReport {
             order_id: id,
             orig_qty: quantity,
@@ -97,10 +108,14 @@ impl<T> ExecutionReport<T> {
             side,
             price: price.unwrap_or(0),
             // market order are alway IOC
-            time_in_force: if order_type == OrderType::Market { TimeInForce::IOC } else { get_order_time_in_force(time_in_force) },
+            time_in_force: if order_type == OrderType::Market {
+                TimeInForce::IOC
+            } else {
+                get_order_time_in_force(time_in_force)
+            },
             post_only,
             fills: Vec::new(),
-            log: None
+            log: None,
         }
     }
 }

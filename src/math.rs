@@ -21,7 +21,7 @@ pub mod math {
 
 #[cfg(test)]
 mod tests_math {
-    use super::math::{safe_add, safe_sub, safe_add_sub};
+    use super::math::{safe_add, safe_add_sub, safe_sub};
 
     #[test]
     fn test_safe_add() {
@@ -41,4 +41,3 @@ mod tests_math {
         assert_eq!(safe_add_sub(100, 50, 200), 0);
     }
 }
-

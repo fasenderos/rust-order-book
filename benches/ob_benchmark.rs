@@ -1,13 +1,19 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use rust_order_book::{LimitOrderOptions, OrderBookBuilder, Side};
 
-fn spam_limit_orders (count: u128) {
-  let mut book = OrderBookBuilder::new("BTC-USD").build();  
-  let mut i = 0;
-  while i < count {
-    let _ = book.limit(LimitOrderOptions { side: Side::Buy, quantity: 50, price: i, time_in_force: None, post_only: None });
-    i += 1;
-  }
+fn spam_limit_orders(count: u128) {
+    let mut book = OrderBookBuilder::new("BTC-USD").build();
+    let mut i = 0;
+    while i < count {
+        let _ = book.limit(LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 50,
+            price: i,
+            time_in_force: None,
+            post_only: None,
+        });
+        i += 1;
+    }
 }
 
 fn order_book_benchmark(c: &mut Criterion) {
