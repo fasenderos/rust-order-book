@@ -3,21 +3,20 @@ use uuid::Uuid;
 
 use crate::math::math::{safe_add, safe_add_sub, safe_sub};
 
-
 #[derive(Debug)]
-pub struct Node {
-    pub prev: Option<Uuid>,
-    pub next: Option<Uuid>,
-    pub quantity: u128
+struct Node {
+    prev: Option<Uuid>,
+    next: Option<Uuid>,
+    quantity: u128
 }
 
 #[derive(Debug)]
 pub struct OrderQueue {
     pub price: u128,
     pub volume: u128,
-    pub head: Option<Uuid>,
-    pub tail: Option<Uuid>,
-    pub nodes: HashMap<Uuid, Node>
+    head: Option<Uuid>,
+    tail: Option<Uuid>,
+    nodes: HashMap<Uuid, Node>
 }
 
 impl OrderQueue {

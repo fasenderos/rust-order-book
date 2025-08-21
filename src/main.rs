@@ -1,6 +1,6 @@
 // TODO REMOVE THIS FILE, IT'S JUST FOR TESTING
 
-use rust_order_book::{order_book::{OrderBook}, order::{LimitOrderOptions, MarketOrderOptions}, enums::{Side}};
+use rust_order_book::{OrderBook, LimitOrderOptions, MarketOrderOptions, Side};
 
 fn main() {
     let mut ob = OrderBook::new("BTC-USD".to_string(), None);

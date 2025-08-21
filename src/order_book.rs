@@ -19,15 +19,7 @@ pub struct Depth {
 }
 
 pub struct OrderBookOptions {
-	/**
-	 * Orderbook snapshot to restore from. The restoration
-	 * will be executed before processing any journal logs, if any.
-	 */
-	// snapshot: Option<Snapshot>,
-	/** Flag to enable journaling. */
 	pub journaling: Option<bool>,
-	// /** Array of journal logs. */
-	// journal: Option<Vec<JournalLog>>,
 }
 
 pub struct OrderBook {

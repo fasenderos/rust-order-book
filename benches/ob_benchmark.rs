@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use rust_order_book::{enums::Side, order::LimitOrderOptions, order_book::OrderBook};
+use rust_order_book::{Side, LimitOrderOptions, OrderBook};
 
 fn spam_limit_orders (count: u128) {
   let mut book = OrderBook::new("BTC-USD".to_string(), None);  
