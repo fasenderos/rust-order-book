@@ -3,7 +3,7 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 #[non_exhaustive]
-pub enum ErrorType {
+pub(crate) enum ErrorType {
     // 10xx General issues
     Default,
 

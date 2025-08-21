@@ -1,5 +1,3 @@
-pub struct Snapshot {}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct JournalLog<T> {
     pub op_id: u128,

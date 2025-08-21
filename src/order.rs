@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{
     journal::JournalLog,
-    enums::{ OrderStatus, OrderType, Side, TimeInForce }
+    OrderStatus, OrderType, Side, TimeInForce
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -13,7 +13,7 @@ pub struct MarketOrderOptions {
 }
 
 #[derive(Debug)]
-pub struct MarketOrder {
+pub(crate) struct MarketOrder {
     pub id: Uuid,
     pub side: Side,
     pub orig_qty: u128,
@@ -50,7 +50,7 @@ pub struct LimitOrderOptions {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct LimitOrder {
+pub(crate) struct LimitOrder {
     pub id: Uuid,
     pub side: Side,
     pub executed_qty: u128,
@@ -107,12 +107,13 @@ pub struct ExecutionReport<OrderOptions> {
     pub price: u128,
     pub status: OrderStatus,
     pub time_in_force: TimeInForce,
+    pub post_only: bool,
     pub fills: Vec<FillReport>,
 	pub log: Option<JournalLog<OrderOptions>>	
 }
 
 impl<T> ExecutionReport<T> {
-    pub fn new(id: Uuid, order_type: OrderType, side: Side, quantity: u128, status: OrderStatus, time_in_force: Option<TimeInForce>, price: Option<u128>) -> ExecutionReport<T> {
+    pub fn new(id: Uuid, order_type: OrderType, side: Side, quantity: u128, status: OrderStatus, time_in_force: Option<TimeInForce>, price: Option<u128>, post_only: bool) -> ExecutionReport<T> {
         ExecutionReport {
             order_id: id,
             orig_qty: quantity,
@@ -126,6 +127,7 @@ impl<T> ExecutionReport<T> {
             price: price.unwrap_or(0),
             // market order are alway IOC
             time_in_force: if order_type == OrderType::Market { TimeInForce::IOC } else { get_order_time_in_force(time_in_force) },
+            post_only,
             fills: Vec::new(),
             log: None
         }
@@ -147,7 +149,7 @@ fn get_order_time_in_force(time_in_force: Option<TimeInForce>) -> TimeInForce {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::enums::{OrderStatus, OrderType, Side, TimeInForce};
+    use crate::{OrderStatus, OrderType, Side, TimeInForce};
     use uuid::Uuid;
 
     #[test]
@@ -215,6 +217,7 @@ mod tests {
             OrderStatus::New,
             Some(TimeInForce::GTC), // dovrebbe ignorarlo
             Some(123),
+            false
         );
 
         assert_eq!(report.order_id, id);
@@ -236,6 +239,7 @@ mod tests {
             OrderStatus::New,
             Some(TimeInForce::FOK),
             None,
+            false
         );
 
         assert_eq!(report.time_in_force, TimeInForce::FOK);

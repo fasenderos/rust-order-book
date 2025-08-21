@@ -1,7 +1,27 @@
 [package]
 name = "rust-order-book"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
+repository = 'https://github.com/fasenderos/rust-order-book'
+homepage = 'https://github.com/fasenderos/rust-order-book'
+description = "A Rust Lmit Order Book for high-frequency trading (HFT)."
+keywords = [
+    "orderbook",
+    "limit-order-book",
+    "order-book",
+    "rust-order-book",
+    "matching-algorithm",
+    "matching-engine",
+    "trading-algorithm",
+    "hft-trading",
+    "exchange",
+    "lob",
+    "trading",
+    "finance",
+]
+categories = ["finance", "algorithms", "data-structures", "cryptography::cryptocurrencies"]
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 chrono = "0.4.41"

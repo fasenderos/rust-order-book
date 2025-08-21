@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum OrderType {
+pub enum OrderType {
     Market,
     Limit,
     // StopMarket,

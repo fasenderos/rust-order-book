@@ -34,10 +34,16 @@ Ultra-fast Rust Order Book </br> for high-frequency trading (HFT) :rocket::rocke
 
 ## Installation
 
-Install with:
+Run the following Cargo command in your project directory:
 
 ```
 cargo add rust-order-book
+```
+
+Or add the following line to your `Cargo.toml`:
+```
+[dependencies]
+rust-order-book = "0.0.1"
 ```
 
 ## Development

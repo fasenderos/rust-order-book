@@ -11,7 +11,7 @@ struct Node {
 }
 
 #[derive(Debug)]
-pub struct OrderQueue {
+pub(crate) struct OrderQueue {
     pub price: u128,
     pub volume: u128,
     head: Option<Uuid>,
@@ -89,16 +89,6 @@ impl OrderQueue {
             }
         }
     }
-
-    pub fn iter_ids(&self) -> Vec<Uuid> {
-        let mut ids = Vec::new();
-        let mut current = self.head;
-        while let Some(id) = current {
-            ids.push(id);
-            current = self.nodes.get(&id).and_then(|n| n.next);
-        }
-        ids
-    }
 }
 
 #[cfg(test)]
@@ -112,6 +102,16 @@ mod tests {
         Uuid::new_v4()
     }
 
+    fn iter_ids(queue: &OrderQueue) -> Vec<Uuid> {
+        let mut ids = Vec::new();
+        let mut current = queue.head;
+        while let Some(id) = current {
+            ids.push(id);
+            current = queue.nodes.get(&id).and_then(|n| n.next);
+        }
+        ids
+    }
+
     #[test]
     fn test_new_queue_is_empty() {
         let q = OrderQueue::new(100);
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(q.volume, 0);
         assert_eq!(q.head(), None);
         assert_eq!(q.tail(), None);
-        assert_eq!(q.iter_ids().len(), 0);
+        assert_eq!(iter_ids(&q).len(), 0);
     }
 
     #[test]
@@ -132,7 +132,7 @@ mod tests {
         assert_eq!(q.volume, 50);
         assert_eq!(q.head(), Some(id));
         assert_eq!(q.tail(), Some(id));
-        assert_eq!(q.iter_ids(), vec![id]);
+        assert_eq!(iter_ids(&q), vec![id]);
     }
 
     #[test]
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(q.volume, 60);
         assert_eq!(q.head(), Some(id1));
         assert_eq!(q.tail(), Some(id3));
-        assert_eq!(q.iter_ids(), vec![id1, id2, id3]);
+        assert_eq!(iter_ids(&q), vec![id1, id2, id3]);
     }
 
     #[test]
@@ -188,7 +188,7 @@ mod tests {
         q.remove(id2, 20);
 
         assert_eq!(q.volume, 40); // 10 + 30
-        assert_eq!(q.iter_ids(), vec![id1, id3]);
+        assert_eq!(iter_ids(&q), vec![id1, id3]);
         assert_eq!(q.head(), Some(id1));
         assert_eq!(q.tail(), Some(id3));
     }
@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(q.volume, 20);
         assert_eq!(q.head(), Some(id2));
         assert_eq!(q.tail(), Some(id2));
-        assert_eq!(q.iter_ids(), vec![id2]);
+        assert_eq!(iter_ids(&q), vec![id2]);
     }
 
     #[test]
@@ -224,7 +224,7 @@ mod tests {
         assert_eq!(q.volume, 10);
         assert_eq!(q.head(), Some(id1));
         assert_eq!(q.tail(), Some(id1));
-        assert_eq!(q.iter_ids(), vec![id1]);
+        assert_eq!(iter_ids(&q), vec![id1]);
     }
 
     #[test]
@@ -237,7 +237,7 @@ mod tests {
 
         assert!(q.is_empty());
         assert_eq!(q.volume, 0);
-        assert_eq!(q.iter_ids().len(), 0);
+        assert_eq!(iter_ids(&q).len(), 0);
     }
 
     #[test]
@@ -250,7 +250,7 @@ mod tests {
 
         assert!(q.is_not_empty());
         assert_eq!(q.volume, 50);
-        assert_eq!(q.iter_ids().len(), 1);
+        assert_eq!(iter_ids(&q).len(), 1);
     }
 
     #[test]
@@ -270,7 +270,7 @@ mod tests {
         // volume atteso = somma 1..=n = n*(n+1)/2
         let expected_volume: u128 = (n as u128) * ((n as u128) + 1) / 2;
         assert_eq!(q.volume, expected_volume);
-        assert_eq!(q.iter_ids().len(), n);
+        assert_eq!(iter_ids(&q).len(), n);
 
         // rimuovo tutti gli ordini
         for (i, id) in ids.iter().enumerate() {
@@ -279,7 +279,7 @@ mod tests {
 
         assert!(q.is_empty());
         assert_eq!(q.volume, 0);
-        assert_eq!(q.iter_ids().len(), 0);
+        assert_eq!(iter_ids(&q).len(), 0);
     }
 
     #[test]
@@ -309,7 +309,7 @@ mod tests {
         // alla fine la coda deve essere vuota
         assert!(q.is_empty());
         assert_eq!(q.volume, 0);
-        assert_eq!(q.iter_ids().len(), 0);
+        assert_eq!(iter_ids(&q).len(), 0);
     }
 
     #[test]
@@ -335,9 +335,9 @@ mod tests {
             let new_qty = rand::random::<u128>() % 500 + 1;
             q.update(*id, *old_qty, new_qty);
             // aggiorno anche la quantità locale per il calcolo volume
-            if let Some(pos) = ids.iter().position(|(i, _)| i == id) {
-                ids[pos].1 = new_qty;
-            }
+            
+            let pos = ids.iter().position(|(i, _)| i == id);
+            ids[pos.unwrap()].1 = new_qty;
         }
 
         // controllo volume totale
@@ -353,6 +353,6 @@ mod tests {
         // alla fine la coda deve essere vuota
         assert!(q.is_empty());
         assert_eq!(q.volume, 0);
-        assert_eq!(q.iter_ids().len(), 0);
+        assert_eq!(iter_ids(&q).len(), 0);
     }
 }

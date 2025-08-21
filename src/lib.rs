@@ -8,5 +8,5 @@ mod enums;
 mod math;
 
 pub use order_book::OrderBook;
-pub use order::{LimitOrderOptions, MarketOrderOptions};
-pub use enums::{Side, TimeInForce, OrderStatus};
+pub use order::{MarketOrderOptions, LimitOrderOptions};
+pub use enums::{OrderStatus, OrderType, Side, TimeInForce};

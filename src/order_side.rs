@@ -9,11 +9,11 @@ use crate::order_queue::OrderQueue;
 use crate::enums::{Side};
 
 #[derive(Debug)]
-pub struct OrderSide {
+pub(crate) struct OrderSide {
     pub prices_tree: RBQueue<u128, Box<dyn Fn(&u128, &u128) -> Ordering>>,
     pub prices: HashMap<u128, OrderQueue>,
     pub volume: u128,
-    pub side: Side,
+    side: Side,
 }
 
 impl OrderSide {
@@ -232,25 +232,24 @@ mod tests {
         let mut to_update = orders.clone();
         to_update.shuffle(&mut rng);
         for (id, _, price) in to_update.iter().take(500) {
-            if let Some(mut queue) = os.take_queue(*price) {
-                if queue.iter_ids().iter().any(|x| *x == *id) {
-                    let new_qty = rand::random::<u128>() % 500 + 1;
-                    queue.update(*id, 0, new_qty); // aggiorna quantità
-                }
-                os.put_queue(*price, queue);
-            }
+            let queue = os.take_queue(*price);
+            let mut queue = queue.unwrap();
+            let new_qty = rand::random::<u128>() % 500 + 1;
+            queue.update(*id, 0, new_qty); // aggiorna quantità
+            
+            os.put_queue(*price, queue);
+            
         }
 
         // rimuovo tutti gli ordini in ordine casuale
         orders.shuffle(&mut rng);
         for (id, qty, price) in orders.iter() {
-            if let Some(mut queue) = os.take_queue(*price) {
-                if queue.iter_ids().iter().any(|x| *x == *id) {
-                    os.remove(*id, *qty, *price, &mut queue);
-                }
-                if !queue.is_empty() {
-                    os.put_queue(*price, queue);
-                }
+            let queue = os.take_queue(*price);
+            let mut queue = queue.unwrap();
+            os.remove(*id, *qty, *price, &mut queue);
+
+            if !queue.is_empty() {
+                os.put_queue(*price, queue);
             }
         }
 
