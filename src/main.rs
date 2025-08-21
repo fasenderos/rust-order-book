@@ -1,9 +1,9 @@
 // TODO REMOVE THIS FILE, IT'S JUST FOR TESTING
 
-use rust_order_book::{OrderBook, LimitOrderOptions, MarketOrderOptions, Side};
+use rust_order_book::{OrderBookBuilder, LimitOrderOptions, MarketOrderOptions, Side};
 
 fn main() {
-    let mut ob = OrderBook::new("BTC-USD".to_string(), None);
+    let mut ob = OrderBookBuilder::new("BTC-USD").build();
     
     let _ = ob.limit(LimitOrderOptions {
         side: Side::Buy,

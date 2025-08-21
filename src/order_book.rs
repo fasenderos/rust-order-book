@@ -1,14 +1,33 @@
+//! Core module for the OrderBook engine.
+//!
+//! This module defines the [`OrderBook`] struct, which provides the main interface
+//! for submitting, canceling, modifying, and querying orders.
+//!
+//! Use [`OrderBookBuilder`](crate::OrderBookBuilder) to create a new instance.
+//!
+//! # Example
+//! ```rust
+//! use my_crate::{OrderBookBuilder, Side, MarketOrderOptions};
+//!
+//! let mut ob = OrderBookBuilder::new("BTCUSD").with_journaling(true).build();
+//!
+//! let result = ob.market(MarketOrderOptions {
+//!     side: Side::Buy,
+//!     size: 10_000,
+//! });
+//! ```
 use std::{fmt, cmp, collections::HashMap};
 use chrono::Utc;
 use uuid::Uuid;
 
 use crate::math::math::{safe_add, safe_sub};
+use crate::{ExecutionReport, OrderBookOptions, FillReport};
 use crate::{
 	error::{make_error, ErrorType, Result},
 	journal::{JournalLog},
 	order_queue::OrderQueue,
 	order_side::OrderSide,
-	order::{LimitOrder, MarketOrder, ExecutionReport, LimitOrderOptions, MarketOrderOptions, FillReport},
+	order::{LimitOrder, MarketOrder, LimitOrderOptions, MarketOrderOptions},
 	{OrderStatus, OrderType, Side, TimeInForce},
 };
 
@@ -18,10 +37,11 @@ pub struct Depth {
 	pub bids: Vec<(u128, u128)>, // (price, volume)
 }
 
-pub struct OrderBookOptions {
-	pub journaling: Option<bool>,
-}
-
+/// A limit order book implementation with support for market orders,
+/// limit orders, cancellation, modification and real-time depth.
+///
+/// Use [`OrderBookBuilder`] to create an instance with optional features
+/// like journaling or snapshot restoration.
 pub struct OrderBook {
 	pub last_op: u128,
 	pub market_price: u128,
@@ -29,28 +49,47 @@ pub struct OrderBook {
 	orders: HashMap<Uuid, LimitOrder>,
 	asks: OrderSide,
 	bids: OrderSide,
-	journaling: bool
+	pub(crate) journaling: bool
 }
 
 impl OrderBook {
-	pub fn new(symbol: String, options: Option<OrderBookOptions>) -> OrderBook {
-		let opts = options.unwrap_or(OrderBookOptions {
-            // snapshot: None,
-            journaling: None,
-            // journal: None,
-        });
-		
-		OrderBook {
+	/// Creates a new `OrderBook` instance with the given symbol and options.
+	///
+	/// Prefer using [`OrderBookBuilder`] for clarity and flexibility.
+	///
+	/// # Parameters
+	/// - `symbol`: Market symbol (e.g., `"BTCUSD"`)
+	/// - `opts`: Configuration options (e.g., journaling, snapshot)
+	///
+	/// # Example
+	/// ```
+	/// let ob = OrderBook::new("BTCUSD".to_string(), OrderBookOptions::default());
+	/// ```
+	pub fn new(symbol: String, opts: OrderBookOptions) -> Self {		
+		Self {
 			last_op: 0,
 			market_price: 0,
 			orders: HashMap::new(),
 			asks: OrderSide::new(Side::Sell),
 			bids: OrderSide::new(Side::Buy),
-			journaling: opts.journaling.unwrap_or(false),
+			journaling: opts.journaling,
 			symbol
 		}
 	}
 
+	/// Executes a market order against the order book.
+	///
+	/// The order will immediately match with the best available opposite orders
+	/// until the quantity is filled or the book is exhausted.
+	///
+	/// # Parameters
+	/// - `options`: A [`MarketOrderOptions`] struct specifying the side and size.
+	///
+	/// # Returns
+	/// An [`ExecutionReport`] with fill information and remaining quantity, if any.
+	///
+	/// # Errors
+	/// Returns `Err` if the input is invalid (e.g., size is zero).
 	pub fn market(&mut self, options: MarketOrderOptions) -> Result<ExecutionReport<MarketOrderOptions>> {
 		let mut order = MarketOrder::new(options.clone());
 		if let Err(err) = self.validate_market_order(&options) {
@@ -126,6 +165,19 @@ impl OrderBook {
 
 	}
 
+	/// Submits a new limit order to the order book.
+	///
+	/// The order will be matched partially or fully if opposing liquidity exists,
+	/// otherwise it will rest in the book until matched or canceled.
+	///
+	/// # Parameters
+	/// - `options`: A [`LimitOrderOptions`] with side, price, size, time-in-force and post_only.
+	///
+	/// # Returns
+	/// An [`ExecutionReport`] with match information and resting status.
+	///
+	/// # Errors
+	/// Returns `Err` if the input is invalid.
 	pub fn limit(&mut self, options: LimitOrderOptions) -> Result<ExecutionReport<LimitOrderOptions>> {
 		let mut order = LimitOrder::new(options.clone());		
 		if let Err(err) = self.validate_limit_order(&options) {
@@ -226,6 +278,16 @@ impl OrderBook {
 		Ok(report)
 	}
 	
+	/// Cancels an existing order by ID.
+	///
+	/// # Parameters
+	/// - `id`: UUID of the order to cancel
+	///
+	/// # Returns
+	/// An [`ExecutionReport`] with order info if successfully canceled.
+	///
+	/// # Errors
+	/// Returns `Err` if the order is not found.
 	pub fn cancel(&mut self, id: Uuid) -> Result<ExecutionReport<Uuid>> {
 		let (side, price) = match self.orders.get(&id) {
 			Some(o) => (o.side, o.price),
@@ -283,6 +345,26 @@ impl OrderBook {
 		Ok(report)
 	}
 
+	/// Modifies an existing order by cancelling it and submitting a new one.
+	///
+	/// This function cancels the existing order with the given ID and replaces it
+	/// with a new one that has the updated price and/or quantity. The new order will
+	/// receive a **new unique ID** and will be placed at the end of the queue,
+	/// losing its original time priority.
+	///
+	/// # Parameters
+	/// - `id`: UUID of the existing order to modify
+	/// - `price`: Optional new price
+	/// - `quantity`: Optional new quantity
+	///
+	/// # Returns
+	/// An [`ExecutionReport`] describing the new order created.
+	///
+	/// # Errors
+	/// Returns `Err` if the order is not found or if the modification parameters are invalid.
+	///
+	/// # Note
+	/// This is a full replacement: time-priority is reset and the order ID changes.
 	pub fn modify(&mut self, id: Uuid, price: Option<u128>, quantity: Option<u128>) -> Result<ExecutionReport<LimitOrderOptions>> {
 		let order = match self.cancel(id) {
 			Ok(o) => o,
@@ -320,6 +402,16 @@ impl OrderBook {
 		}
 	}
 
+	/// Returns the current depth of the order book.
+	///
+	/// The depth includes aggregated quantities at each price level
+	/// for both the bid and ask sides.
+	///
+	/// # Parameters
+	/// - `limit`: Optional maximum number of price levels per side
+	///
+	/// # Returns
+	/// A [`Depth`] struct containing the order book snapshot.
 	pub fn depth(&self, limit: Option<u32>) -> Depth {
 		let limit = cmp::max(limit.unwrap_or(100), 1000);
 		let asks = self.asks.depth(limit);
@@ -507,13 +599,14 @@ impl fmt::Display for OrderBook {
 mod tests {
 	use super::*;
     use uuid::Uuid;
+	use crate::OrderBookBuilder;
 
     fn make_uuid() -> Uuid {
         Uuid::new_v4()
     }
 
 	fn make_order_book(options: Option<OrderBookOptions>) -> OrderBook {
-		OrderBook::new("BTC-USD".to_string(), options)
+		OrderBookBuilder::new("BTC-USD").with_options(options.unwrap_or(OrderBookOptions::default())).build()
 	}
 
 	fn get_populated_order_book(limit_orders: Vec<(Side, u128, u128)>, options: Option<OrderBookOptions>) -> OrderBook {
@@ -538,7 +631,7 @@ mod tests {
 			(Side::Buy, 3, 999),
 			(Side::Sell, 3, 1001),
 			(Side::Sell, 5, 1002)
-		), Some(OrderBookOptions { journaling: Some(true) }));
+		), Some(OrderBookOptions { journaling: true }));
 
 		let m1 = MarketOrderOptions { side: Side::Buy, quantity: 4 };
 		let m2 = MarketOrderOptions { side: Side::Sell, quantity: 4 };
@@ -649,7 +742,7 @@ mod tests {
 	fn test_order_book_options() {
 		let mut ob = get_populated_order_book(vec!(
 			(Side::Sell, 5, 1100),
-		), Some(OrderBookOptions { journaling: Some(true) }));
+		), Some(OrderBookOptions { journaling: true }));
 
 		let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
 		let resp = ob.market(l1);
@@ -789,7 +882,7 @@ mod tests {
 			let mut ob = get_populated_order_book(vec!(
 				(Side::Buy, 5, 1000),
 				(Side::Sell, 5, 1100),
-			), Some(OrderBookOptions{ journaling: Some(true)}));
+			), Some(OrderBookOptions{ journaling: true }));
 
 			// on same price level
 			let l1 = LimitOrderOptions { side: Side::Buy, quantity: 5, price: 1000, time_in_force: None, post_only: None };

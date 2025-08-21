@@ -1,11 +1,24 @@
+//! This module defines the public API for submitting market and limit orders
+//! via [`MarketOrderOptions`] and [`LimitOrderOptions`].
+//!
+//! Users will not need to interact with internal structs like [`MarketOrder`]
+//! or [`LimitOrder`] directly.
+
 use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
-    journal::JournalLog,
     OrderStatus, OrderType, Side, TimeInForce
 };
 
+/// Options for submitting a market order to the order book.
+///
+/// Market orders are matched immediately against the best available prices,
+/// consuming liquidity.
+///
+/// # Fields
+/// - `side`: Buy or Sell
+/// - `quantity`: The total amount to trade
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MarketOrderOptions {
     pub side: Side,
@@ -39,7 +52,17 @@ impl MarketOrder {
     }
 }
 
-
+/// Options for submitting a limit order to the order book.
+///
+/// Limit orders rest at a specific price level unless matched immediately.
+/// Time-in-force and post-only logic can be configured.
+///
+/// # Fields
+/// - `side`: Buy or Sell
+/// - `quantity`: Order size
+/// - `price`: Limit price
+/// - `time_in_force`: Optional TIF setting (default: GTC)
+/// - `post_only`: Optional post-only flag (default: false)
 #[derive(Debug, Clone, Copy)]
 pub struct LimitOrderOptions {
     pub side: Side,
@@ -86,54 +109,6 @@ impl LimitOrder {
     }
 }
 
-#[derive(Debug)]
-pub struct FillReport {
-    pub order_id: Uuid,
-    pub price: u128,
-    pub quantity: u128,
-    pub status: OrderStatus,
-}
-
-#[derive(Debug)]
-pub struct ExecutionReport<OrderOptions> {
-    pub order_id: Uuid,
-    pub orig_qty: u128,
-    pub executed_qty: u128,
-    pub remaining_qty: u128,
-    pub taker_qty: u128,
-    pub maker_qty: u128,
-    pub order_type: OrderType,
-    pub side: Side,
-    pub price: u128,
-    pub status: OrderStatus,
-    pub time_in_force: TimeInForce,
-    pub post_only: bool,
-    pub fills: Vec<FillReport>,
-	pub log: Option<JournalLog<OrderOptions>>	
-}
-
-impl<T> ExecutionReport<T> {
-    pub fn new(id: Uuid, order_type: OrderType, side: Side, quantity: u128, status: OrderStatus, time_in_force: Option<TimeInForce>, price: Option<u128>, post_only: bool) -> ExecutionReport<T> {
-        ExecutionReport {
-            order_id: id,
-            orig_qty: quantity,
-            executed_qty: 0,
-            remaining_qty: quantity,
-            status,
-            taker_qty: 0,
-            maker_qty: 0,
-            order_type,
-            side,
-            price: price.unwrap_or(0),
-            // market order are alway IOC
-            time_in_force: if order_type == OrderType::Market { TimeInForce::IOC } else { get_order_time_in_force(time_in_force) },
-            post_only,
-            fills: Vec::new(),
-            log: None
-        }
-    }
-}
-
 fn get_order_id(id: Option<Uuid>) -> Uuid {
     id.unwrap_or_else(|| Uuid::new_v4())
 }
@@ -142,14 +117,14 @@ fn get_order_time(time: Option<i64>) -> i64 {
     time.unwrap_or_else(|| Utc::now().timestamp_millis())
 }
 
-fn get_order_time_in_force(time_in_force: Option<TimeInForce>) -> TimeInForce {
+pub(crate) fn get_order_time_in_force(time_in_force: Option<TimeInForce>) -> TimeInForce {
     time_in_force.unwrap_or(TimeInForce::GTC)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OrderStatus, OrderType, Side, TimeInForce};
+    use crate::{ExecutionReport, OrderStatus, OrderType, Side, TimeInForce};
     use uuid::Uuid;
 
     #[test]

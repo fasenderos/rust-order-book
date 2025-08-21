@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use rust_order_book::{Side, LimitOrderOptions, OrderBook};
+use rust_order_book::{LimitOrderOptions, OrderBookBuilder, Side};
 
 fn spam_limit_orders (count: u128) {
-  let mut book = OrderBook::new("BTC-USD".to_string(), None);  
+  let mut book = OrderBookBuilder::new("BTC-USD").build();  
   let mut i = 0;
   while i < count {
     let _ = book.limit(LimitOrderOptions { side: Side::Buy, quantity: 50, price: i, time_in_force: None, post_only: None });
