@@ -21,7 +21,7 @@ use crate::enums::JournalOp;
 /// - `o`: The payload or input associated with the operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JournalLog<T> {
-    pub op_id: u128,
+    pub op_id: u64,
     pub ts: i64,
     pub op: JournalOp,
     pub o: T,

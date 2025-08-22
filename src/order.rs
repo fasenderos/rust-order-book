@@ -22,16 +22,16 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MarketOrderOptions {
     pub side: Side,
-    pub quantity: u128,
+    pub quantity: u64,
 }
 
 #[derive(Debug)]
 pub(crate) struct MarketOrder {
     pub id: Uuid,
     pub side: Side,
-    pub orig_qty: u128,
-    pub executed_qty: u128,
-    pub remaining_qty: u128,
+    pub orig_qty: u64,
+    pub executed_qty: u64,
+    pub remaining_qty: u64,
     pub order_type: OrderType,
     pub time: i64,
     pub status: OrderStatus,
@@ -66,8 +66,8 @@ impl MarketOrder {
 #[derive(Debug, Clone, Copy)]
 pub struct LimitOrderOptions {
     pub side: Side,
-    pub quantity: u128,
-    pub price: u128,
+    pub quantity: u64,
+    pub price: u64,
     pub time_in_force: Option<TimeInForce>,
     pub post_only: Option<bool>,
 }
@@ -76,16 +76,16 @@ pub struct LimitOrderOptions {
 pub(crate) struct LimitOrder {
     pub id: Uuid,
     pub side: Side,
-    pub executed_qty: u128,
-    pub remaining_qty: u128,
-    pub orig_qty: u128,
-    pub price: u128,
+    pub executed_qty: u64,
+    pub remaining_qty: u64,
+    pub orig_qty: u64,
+    pub price: u64,
     pub order_type: OrderType,
     pub time: i64,
     pub time_in_force: TimeInForce,
     pub post_only: bool,
-    pub taker_qty: u128,
-    pub maker_qty: u128,
+    pub taker_qty: u64,
+    pub maker_qty: u64,
     pub status: OrderStatus,
 }
 

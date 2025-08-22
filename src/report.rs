@@ -23,8 +23,8 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub struct FillReport {
     pub order_id: Uuid,
-    pub price: u128,
-    pub quantity: u128,
+    pub price: u64,
+    pub quantity: u64,
     pub status: OrderStatus,
 }
 
@@ -57,14 +57,14 @@ pub struct FillReport {
 #[derive(Debug)]
 pub struct ExecutionReport<OrderOptions> {
     pub order_id: Uuid,
-    pub orig_qty: u128,
-    pub executed_qty: u128,
-    pub remaining_qty: u128,
-    pub taker_qty: u128,
-    pub maker_qty: u128,
+    pub orig_qty: u64,
+    pub executed_qty: u64,
+    pub remaining_qty: u64,
+    pub taker_qty: u64,
+    pub maker_qty: u64,
     pub order_type: OrderType,
     pub side: Side,
-    pub price: u128,
+    pub price: u64,
     pub status: OrderStatus,
     pub time_in_force: TimeInForce,
     pub post_only: bool,
@@ -90,10 +90,10 @@ impl<T> ExecutionReport<T> {
         id: Uuid,
         order_type: OrderType,
         side: Side,
-        quantity: u128,
+        quantity: u64,
         status: OrderStatus,
         time_in_force: Option<TimeInForce>,
-        price: Option<u128>,
+        price: Option<u64>,
         post_only: bool,
     ) -> ExecutionReport<T> {
         ExecutionReport {

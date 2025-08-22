@@ -16,7 +16,8 @@
 //!     size: 10_000,
 //! });
 //! ```
-use std::{cmp, collections::HashMap, fmt};
+use rustc_hash::{FxBuildHasher, FxHashMap};
+use std::{cmp, fmt};
 use uuid::Uuid;
 
 use crate::enums::JournalOp;
@@ -34,8 +35,8 @@ use crate::{ExecutionReport, FillReport, OrderBookOptions};
 
 #[derive(Debug, PartialEq)]
 pub struct Depth {
-    pub asks: Vec<(u128, u128)>, // (price, volume)
-    pub bids: Vec<(u128, u128)>, // (price, volume)
+    pub asks: Vec<(u64, u64)>, // (price, volume)
+    pub bids: Vec<(u64, u64)>, // (price, volume)
 }
 
 /// A limit order book implementation with support for market orders,
@@ -44,10 +45,10 @@ pub struct Depth {
 /// Use [`OrderBookBuilder`] to create an instance with optional features
 /// like journaling or snapshot restoration.
 pub struct OrderBook {
-    pub last_op: u128,
-    pub market_price: u128,
+    pub last_op: u64,
+    pub market_price: u64,
     pub symbol: String,
-    orders: HashMap<Uuid, LimitOrder>,
+    orders: FxHashMap<Uuid, LimitOrder>,
     asks: OrderSide,
     bids: OrderSide,
     pub(crate) journaling: bool,
@@ -70,9 +71,9 @@ impl OrderBook {
         Self {
             last_op: 0,
             market_price: 0,
-            orders: HashMap::new(),
-            asks: OrderSide::new(Side::Sell),
-            bids: OrderSide::new(Side::Buy),
+            orders: FxHashMap::with_capacity_and_hasher(100_000, FxBuildHasher),
+            asks: OrderSide::with_capacity(Side::Sell, 1_000),
+            bids: OrderSide::with_capacity(Side::Buy, 1_000),
             journaling: opts.journaling,
             symbol,
         }
@@ -222,10 +223,10 @@ impl OrderBook {
 
                 let best_price = if is_buy {
                     side.min_price()
-						.expect(format!("The order queue on side {:?} is not empty but there was an error on finding the min_price", side).as_str())
+                        .expect(format!("The order queue on side {:?} is not empty but there was an error on finding the min_price", side).as_str())
                 } else {
                     side.max_price()
-						.expect(format!("The order queue on side {:?} is not empty but there was an error on finding the max_price", side).as_str())
+                        .expect(format!("The order queue on side {:?} is not empty but there was an error on finding the max_price", side).as_str())
                 };
 
                 if (is_buy && order.price < best_price) || (!is_buy && order.price > best_price) {
@@ -233,7 +234,7 @@ impl OrderBook {
                 }
 
                 let queue = side.take_queue(best_price)
-					.expect(format!("The price {} was found but there was an error on taking the queue on side {:?}", best_price, side).as_str());
+                    .expect(format!("The price {} was found but there was an error on taking the queue on side {:?}", best_price, side).as_str());
                 (best_price, queue)
             };
 
@@ -392,8 +393,8 @@ impl OrderBook {
     pub fn modify(
         &mut self,
         id: Uuid,
-        price: Option<u128>,
-        quantity: Option<u128>,
+        price: Option<u64>,
+        quantity: Option<u64>,
     ) -> Result<ExecutionReport<LimitOrderOptions>> {
         let order = match self.cancel(id) {
             Ok(o) => o,
@@ -445,7 +446,7 @@ impl OrderBook {
     fn process_queue(
         &mut self,
         order_queue: &mut OrderQueue,
-        quantity_left: &mut u128,
+        quantity_left: &mut u64,
     ) -> Vec<FillReport> {
         let mut fills = Vec::new();
 
@@ -547,7 +548,7 @@ impl OrderBook {
         Ok(())
     }
 
-    fn limit_order_is_fillable(&self, side: Side, quantity: u128, price: u128) -> bool {
+    fn limit_order_is_fillable(&self, side: Side, quantity: u64, price: u64) -> bool {
         return if side == Side::Buy {
             self.limit_buy_order_is_fillable(quantity, price)
         } else {
@@ -555,7 +556,7 @@ impl OrderBook {
         };
     }
 
-    fn limit_buy_order_is_fillable(&self, quantity: u128, price: u128) -> bool {
+    fn limit_buy_order_is_fillable(&self, quantity: u64, price: u64) -> bool {
         if self.asks.volume < quantity {
             return false;
         }
@@ -564,7 +565,7 @@ impl OrderBook {
             println!("price {} & level price {}", price, *level_price);
             if price > *level_price && cumulative_qty < quantity {
                 let order_queue = self.asks.prices.get(level_price)
-					.expect(format!("In side Sell the price {} is in prices tree but is missing in the price map", level_price).as_str());
+                    .expect(format!("In side Sell the price {} is in prices tree but is missing in the price map", level_price).as_str());
                 cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
             } else {
                 break;
@@ -573,7 +574,7 @@ impl OrderBook {
         cumulative_qty >= quantity
     }
 
-    fn limit_sell_order_is_fillable(&self, quantity: u128, price: u128) -> bool {
+    fn limit_sell_order_is_fillable(&self, quantity: u64, price: u64) -> bool {
         if self.bids.volume < quantity {
             return false;
         }
@@ -584,7 +585,7 @@ impl OrderBook {
             println!("price {} & level price {}", price, *level_price);
             if price <= *level_price && cumulative_qty < quantity {
                 let order_queue = self.bids.prices.get(level_price)
-					.expect(format!("In side Buy the price {} is in prices tree but is missing in the price map", level_price).as_str());
+                    .expect(format!("In side Buy the price {} is in prices tree but is missing in the price map", level_price).as_str());
                 cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
             } else {
                 break;
@@ -594,11 +595,19 @@ impl OrderBook {
     }
 
     fn get_order_side_mut(&mut self, side: Side) -> &mut OrderSide {
-        return if side == Side::Buy { &mut self.bids } else { &mut self.asks };
+        if side == Side::Buy {
+            &mut self.bids
+        } else {
+            &mut self.asks
+        }
     }
 
     fn get_opposite_order_side_mut(&mut self, side: Side) -> &mut OrderSide {
-        return if side == Side::Buy { &mut self.asks } else { &mut self.bids };
+        if side == Side::Buy {
+            &mut self.asks
+        } else {
+            &mut self.bids
+        }
     }
 }
 
@@ -627,7 +636,7 @@ mod tests {
     }
 
     fn get_populated_order_book(
-        limit_orders: Vec<(Side, u128, u128)>,
+        limit_orders: Vec<(Side, u64, u64)>,
         options: Option<OrderBookOptions>,
     ) -> OrderBook {
         let mut ob = make_order_book(options);

@@ -25,14 +25,18 @@ readme = "README.md"
 
 [dependencies]
 rb_tree = "0.5.0"
+rustc-hash = "2.1.1"
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.18.0", features = ["v4"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+limitbook = "0.1.0"
+lobster = "0.7.0"
 rand = "0.9.2"
+rust_decimal = { version = "1.37.2", features = ["macros"] }
 serde_json = "1.0"
 
 [[bench]]
-name = "ob_benchmark"
+name = "benchmark"
 harness = false

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
 use crate::math::math::{safe_add, safe_add_sub, safe_sub};
@@ -7,21 +7,21 @@ use crate::math::math::{safe_add, safe_add_sub, safe_sub};
 struct Node {
     prev: Option<Uuid>,
     next: Option<Uuid>,
-    quantity: u128,
+    quantity: u64,
 }
 
 #[derive(Debug)]
 pub(crate) struct OrderQueue {
-    pub price: u128,
-    pub volume: u128,
+    pub price: u64,
+    pub volume: u64,
     head: Option<Uuid>,
     tail: Option<Uuid>,
-    nodes: HashMap<Uuid, Node>,
+    nodes: FxHashMap<Uuid, Node>,
 }
 
 impl OrderQueue {
-    pub fn new(price: u128) -> OrderQueue {
-        OrderQueue { price, volume: 0, head: None, tail: None, nodes: HashMap::new() }
+    pub fn new(price: u64) -> OrderQueue {
+        OrderQueue { price, volume: 0, head: None, tail: None, nodes: FxHashMap::default() }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -38,7 +38,7 @@ impl OrderQueue {
     }
 
     /// Add the order id to the tail of the queue
-    pub fn append(&mut self, id: Uuid, quantity: u128) {
+    pub fn append(&mut self, id: Uuid, quantity: u64) {
         let new = Node { prev: self.tail, next: None, quantity };
         self.volume = safe_add(self.volume, quantity);
 
@@ -61,7 +61,7 @@ impl OrderQueue {
     }
 
     // sets up new order to list value
-    pub fn update(&mut self, id: Uuid, old_quantity: u128, new_quantity: u128) {
+    pub fn update(&mut self, id: Uuid, old_quantity: u64, new_quantity: u64) {
         if let Some(node) = self.nodes.get_mut(&id) {
             self.volume = safe_add_sub(self.volume, new_quantity, old_quantity);
             node.quantity = new_quantity;
@@ -69,7 +69,7 @@ impl OrderQueue {
     }
 
     /// removes order from the queue
-    pub fn remove(&mut self, id: Uuid, quantity: u128) {
+    pub fn remove(&mut self, id: Uuid, quantity: u64) {
         let node = match self.nodes.remove(&id) {
             Some(n) => n,
             None => return,
@@ -270,18 +270,18 @@ mod tests {
         // inserisco 1000 ordini con quantità = indice+1
         for i in 0..n {
             let id = new_order_id();
-            q.append(id, (i + 1) as u128);
+            q.append(id, (i + 1) as u64);
             ids.push(id);
         }
 
         // volume atteso = somma 1..=n = n*(n+1)/2
-        let expected_volume: u128 = (n as u128) * ((n as u128) + 1) / 2;
+        let expected_volume: u64 = (n as u64) * ((n as u64) + 1) / 2;
         assert_eq!(q.volume, expected_volume);
         assert_eq!(iter_ids(&q).len(), n);
 
         // rimuovo tutti gli ordini
         for (i, id) in ids.iter().enumerate() {
-            q.remove(*id, (i + 1) as u128);
+            q.remove(*id, (i + 1) as u64);
         }
 
         assert!(q.is_empty());
@@ -298,13 +298,13 @@ mod tests {
         // aggiungo 500 ordini con quantità casuale 1..1000
         for _ in 0..500 {
             let id = new_order_id();
-            let qty = rand::random::<u128>() % 1000 + 1;
+            let qty = rand::random::<u64>() % 1000 + 1;
             q.append(id, qty);
             ids.push((id, qty));
         }
 
         // controllo volume totale
-        let expected_volume: u128 = ids.iter().map(|(_, qty)| *qty).sum();
+        let expected_volume: u64 = ids.iter().map(|(_, qty)| *qty).sum();
         assert_eq!(q.volume, expected_volume);
 
         // rimuovo gli ordini in ordine casuale
@@ -328,7 +328,7 @@ mod tests {
         // aggiungo 300 ordini con quantità casuale 1..500
         for _ in 0..300 {
             let id = new_order_id();
-            let qty = rand::random::<u128>() % 500 + 1;
+            let qty = rand::random::<u64>() % 500 + 1;
             q.append(id, qty);
             ids.push((id, qty));
         }
@@ -339,7 +339,7 @@ mod tests {
         let updates = &ids_to_update[..150];
 
         for (id, old_qty) in updates.iter() {
-            let new_qty = rand::random::<u128>() % 500 + 1;
+            let new_qty = rand::random::<u64>() % 500 + 1;
             q.update(*id, *old_qty, new_qty);
             // aggiorno anche la quantità locale per il calcolo volume
 
@@ -348,7 +348,7 @@ mod tests {
         }
 
         // controllo volume totale
-        let expected_volume: u128 = ids.iter().map(|(_, qty)| *qty).sum();
+        let expected_volume: u64 = ids.iter().map(|(_, qty)| *qty).sum();
         assert_eq!(q.volume, expected_volume);
 
         // rimuovo tutti gli ordini in ordine casuale

@@ -1,6 +1,6 @@
 use rb_tree::RBQueue;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::fmt;
 use uuid::Uuid;
 
@@ -10,42 +10,57 @@ use crate::order_queue::OrderQueue;
 
 #[derive(Debug)]
 pub(crate) struct OrderSide {
-    pub prices_tree: RBQueue<u128, Box<dyn Fn(&u128, &u128) -> Ordering>>,
-    pub prices: HashMap<u128, OrderQueue>,
-    pub volume: u128,
+    pub prices_tree: RBQueue<u64, fn(&u64, &u64) -> Ordering>,
+    pub prices: FxHashMap<u64, OrderQueue>,
+    pub volume: u64,
     side: Side,
 }
 
 impl OrderSide {
-    pub fn new(side: Side) -> OrderSide {
-        let side_for_cmp = side;
-        let comparator = move |a: &u128, b: &u128| {
-            match side_for_cmp {
-                Side::Sell => a.cmp(b), // ordine crescente
-                Side::Buy => b.cmp(a),  // ordine decrescente
-            }
-        };
-        OrderSide {
+    // pub fn new(side: Side) -> Self {
+    //     Self {
+    //         side,
+    //         prices: FxHashMap::default(),
+    //         prices_tree: RBQueue::<u64, _>::new(if side == Side::Buy { OrderSide::buy_cmp } else { OrderSide::sell_cmp }),
+    //         volume: 0,
+    //     }
+    // }
+    pub fn with_capacity(side: Side, capacity: usize) -> Self {
+        Self {
             side,
-            prices: HashMap::new(),
-            prices_tree: RBQueue::new(Box::new(comparator)),
+            prices: FxHashMap::with_capacity_and_hasher(capacity, FxBuildHasher),
+            prices_tree: RBQueue::<u64, _>::new(if side == Side::Buy {
+                OrderSide::buy_cmp
+            } else {
+                OrderSide::sell_cmp
+            }),
             volume: 0,
         }
     }
 
-    // appends order to definite price level
-    pub fn append(&mut self, id: Uuid, quantity: u128, price: u128) {
-        let queue = self.prices.entry(price).or_insert_with(|| {
-            self.prices_tree.insert(price);
-            OrderQueue::new(price)
-        });
+    fn buy_cmp(a: &u64, b: &u64) -> Ordering {
+        b.cmp(a) // ordine decrescente
+    }
 
-        self.volume = safe_add(self.volume, quantity);
-        queue.append(id, quantity);
+    fn sell_cmp(a: &u64, b: &u64) -> Ordering {
+        a.cmp(b) // ordine crescente
+    }
+
+    // appends order to definite price level
+    pub fn append(&mut self, id: Uuid, quantity: u64, price: u64) {
+        if !self.prices.contains_key(&price) {
+            self.prices.insert(price, OrderQueue::new(price));
+            self.prices_tree.insert(price);
+        }
+
+        if let Some(queue) = self.prices.get_mut(&price) {
+            self.volume = safe_add(self.volume, quantity);
+            queue.append(id, quantity);
+        }
     }
 
     // removes order from definite price level
-    pub fn remove(&mut self, id: Uuid, quantity: u128, price: u128, queue: &mut OrderQueue) {
+    pub fn remove(&mut self, id: Uuid, quantity: u64, price: u64, queue: &mut OrderQueue) {
         queue.remove(id, quantity);
         if queue.is_empty() {
             self.prices.remove(&price);
@@ -58,15 +73,15 @@ impl OrderSide {
         self.prices.is_empty()
     }
 
-    pub fn take_queue(&mut self, price: u128) -> Option<OrderQueue> {
+    pub fn take_queue(&mut self, price: u64) -> Option<OrderQueue> {
         self.prices.remove(&price)
     }
 
-    pub fn put_queue(&mut self, price: u128, q: OrderQueue) {
+    pub fn put_queue(&mut self, price: u64, q: OrderQueue) {
         self.prices.insert(price, q);
     }
 
-    pub fn best_price(&self, min: bool) -> Option<u128> {
+    pub fn best_price(&self, min: bool) -> Option<u64> {
         let price = match (self.side, min) {
             (Side::Sell, true) | (Side::Buy, false) => self.prices_tree.peek(),
             (Side::Sell, false) | (Side::Buy, true) => self.prices_tree.peek_back(),
@@ -75,16 +90,16 @@ impl OrderSide {
     }
 
     // returns max level of price
-    pub fn min_price(&self) -> Option<u128> {
+    pub fn min_price(&self) -> Option<u64> {
         self.best_price(true)
     }
 
     // returns min level of price
-    pub fn max_price(&self) -> Option<u128> {
+    pub fn max_price(&self) -> Option<u64> {
         self.best_price(false)
     }
 
-    pub fn depth(&self, limit: u32) -> Vec<(u128, u128)> {
+    pub fn depth(&self, limit: u32) -> Vec<(u64, u64)> {
         let mut depth = Vec::new();
         let mut count = 0;
 
@@ -106,7 +121,7 @@ impl OrderSide {
 impl fmt::Display for OrderSide {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let prices = self.prices_tree.ordered();
-        let iter: Box<dyn Iterator<Item = &&u128>> = match self.side {
+        let iter: Box<dyn Iterator<Item = &&u64>> = match self.side {
             Side::Sell => Box::new(prices.iter().rev()),
             Side::Buy => Box::new(prices.iter()),
         };
@@ -222,8 +237,8 @@ mod tests {
         // aggiungo 1000 ordini su prezzi casuali tra 100..200
         for _ in 0..1000 {
             let id = new_order_id();
-            let qty = rand::random::<u128>() % 500 + 1;
-            let price = 100 + rand::random::<u128>() % 100;
+            let qty = rand::random::<u64>() % 500 + 1;
+            let price = 100 + rand::random::<u64>() % 100;
             os.append(id, qty, price);
             orders.push((id, qty, price));
         }
@@ -234,7 +249,7 @@ mod tests {
         for (id, _, price) in to_update.iter().take(500) {
             let queue = os.take_queue(*price);
             let mut queue = queue.unwrap();
-            let new_qty = rand::random::<u128>() % 500 + 1;
+            let new_qty = rand::random::<u64>() % 500 + 1;
             queue.update(*id, 0, new_qty); // aggiorna quantità
 
             os.put_queue(*price, queue);
