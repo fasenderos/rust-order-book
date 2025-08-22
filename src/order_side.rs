@@ -41,16 +41,14 @@ impl OrderSide {
     // appends order to definite price level
     pub fn append(&mut self, id: Uuid, quantity: u64, price: u64) {
         if !self.prices.contains_key(&price) {
-            self.prices.insert(price, OrderQueue::new(price));
+            self.prices.insert(price, OrderQueue::new());
             self.prices_tree.insert(price);
         }
 
-        let queue = self.prices.get_mut(&price).expect(
-            format!("OrderSide on {:?} is broken: price {} not in prices", self.side, price)
-                .as_str(),
-        );
-        self.volume = safe_add(self.volume, quantity);
-        queue.append(id, quantity);
+        if let Some(queue) = self.prices.get_mut(&price) {
+            self.volume = safe_add(self.volume, quantity);
+            queue.append(id, quantity);
+        }
     }
 
     // removes order from definite price level
@@ -102,10 +100,10 @@ impl OrderSide {
                 break;
             }
 
-            let queue = self.prices.get(price)
-                .expect(format!("[dept()]: In OrderSide {:?} the price {} is in price_tree but is missing in the prices map", self.side, price).as_str());
-            depth.push((*price, queue.volume));
-            count += 1;
+            if let Some(queue) = self.prices.get(price) {
+                depth.push((*price, queue.volume));
+                count += 1;
+            }
         }
 
         depth
@@ -121,9 +119,9 @@ impl fmt::Display for OrderSide {
         };
 
         for price in iter {
-            let queue = self.prices.get(&price)
-                .expect(format!("[fmt::Display]: In OrderSide {:?} the price {} is in price_tree but is missing in the prices map", self.side, price).as_str());
-            writeln!(f, "{} -> {}", price, queue.volume).expect("Failed to write to formatter");
+             if let Some(queue) = self.prices.get(&price){
+                 writeln!(f, "{} -> {}", price, queue.volume)?;
+             }
         }
 
         Ok(())

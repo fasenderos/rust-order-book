@@ -123,18 +123,12 @@ impl OrderBook {
             }
 
             let (best_price, mut best_price_queue) = {
-                let side = self.get_opposite_order_side_mut(order.side);
-                let best_price = if is_buy {
-                    side.min_price()
-						.expect(format!("The order queue on side {:?} is not empty but there was an error on finding the min_price", side).as_str())
-                } else {
-                    side.max_price()
-						.expect(format!("The order queue on side {:?} is not empty but there was an error on finding the max_price", side).as_str())
-                };
-                let queue = side.take_queue(best_price)
-					.expect(format!("The price {} was found but there was an error on taking the queue on side {:?}", best_price, side).as_str());
-                (best_price, queue)
-            };
+				let side = self.get_opposite_order_side_mut(order.side);
+				let best_price = if is_buy { side.min_price() } else { side.max_price() };
+				let Some(price) = best_price else { break };
+				let Some(q) = side.take_queue(price) else { break };
+				(price, q)
+			};
 
             let fills = self.process_queue(&mut best_price_queue, &mut quantity_to_trade);
 
@@ -219,24 +213,15 @@ impl OrderBook {
             }
 
             let (best_price, mut best_price_queue) = {
-                let side = self.get_opposite_order_side_mut(order.side);
-
-                let best_price = if is_buy {
-                    side.min_price()
-                        .expect(format!("The order queue on side {:?} is not empty but there was an error on finding the min_price", side).as_str())
-                } else {
-                    side.max_price()
-                        .expect(format!("The order queue on side {:?} is not empty but there was an error on finding the max_price", side).as_str())
-                };
-
-                if (is_buy && order.price < best_price) || (!is_buy && order.price > best_price) {
-                    break;
-                }
-
-                let queue = side.take_queue(best_price)
-                    .expect(format!("The price {} was found but there was an error on taking the queue on side {:?}", best_price, side).as_str());
-                (best_price, queue)
-            };
+				let side = self.get_opposite_order_side_mut(order.side);
+				let best_price = if is_buy { side.min_price() } else { side.max_price() };
+				let Some(price) = best_price else { break };
+				if (is_buy && order.price < price) || (!is_buy && order.price > price) {
+					break;
+				}
+				let Some(q) = side.take_queue(price) else { break };
+				(price, q)
+			};
 
             if order.post_only {
                 return Err(make_error(ErrorType::OrderPostOnly));
@@ -451,37 +436,31 @@ impl OrderBook {
         let mut fills = Vec::new();
 
         while order_queue.is_not_empty() && *quantity_left > 0 {
-            let head_order_uuid = order_queue
-                .head()
-                .expect(format!("Order queue not empty but head order uuid is missing").as_str());
-
-            let (head_quantity, head_price) = {
-                let order = self
-                    .orders
-                    .get(&head_order_uuid)
-                    .expect("Order queue not empty but head order is missing");
-                (order.remaining_qty, order.price)
-            };
+            let Some(head_order_uuid) = order_queue.head() else { break };
+			let (head_quantity, head_price) = match self.orders.get(&head_order_uuid) {
+				Some(o) => (o.remaining_qty, o.price),
+				None => break
+			};
 
             if *quantity_left < head_quantity {
                 {
-                    let head_order = self.orders.get_mut(&head_order_uuid).expect(
-                        format!("Order {} finded before disappear right after", head_order_uuid)
-                            .as_str(),
-                    );
+                    match self.orders.get_mut(&head_order_uuid) {
+                        None => break,
+                        Some(head_order) => {
+                            head_order.remaining_qty = safe_sub(head_order.remaining_qty, *quantity_left);
+                            head_order.executed_qty = safe_add(head_order.executed_qty, *quantity_left);
+                            head_order.status = OrderStatus::PartiallyFilled;
 
-                    head_order.remaining_qty = safe_sub(head_order.remaining_qty, *quantity_left);
-                    head_order.executed_qty = safe_add(head_order.executed_qty, *quantity_left);
-                    head_order.status = OrderStatus::PartiallyFilled;
+                            fills.push(FillReport {
+                                order_id: head_order.id,
+                                price: head_order.price,
+                                quantity: *quantity_left,
+                                status: head_order.status,
+                            });
 
-                    fills.push(FillReport {
-                        order_id: head_order.id,
-                        price: head_order.price,
-                        quantity: *quantity_left,
-                        status: head_order.status,
-                    });
-
-                    order_queue.update(head_order_uuid, head_quantity, head_order.remaining_qty);
+                            order_queue.update(head_order_uuid, head_quantity, head_order.remaining_qty);
+                        }
+                    }
                 }
                 *quantity_left = 0;
             } else {
@@ -564,9 +543,9 @@ impl OrderBook {
         for level_price in self.asks.prices_tree.iter() {
             println!("price {} & level price {}", price, *level_price);
             if price > *level_price && cumulative_qty < quantity {
-                let order_queue = self.asks.prices.get(level_price)
-                    .expect(format!("In side Sell the price {} is in prices tree but is missing in the price map", level_price).as_str());
-                cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
+                if let Some(order_queue) = self.asks.prices.get(level_price) {
+                    cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
+                }
             } else {
                 break;
             }
@@ -584,9 +563,9 @@ impl OrderBook {
         for level_price in self.bids.prices_tree.iter() {
             println!("price {} & level price {}", price, *level_price);
             if price <= *level_price && cumulative_qty < quantity {
-                let order_queue = self.bids.prices.get(level_price)
-                    .expect(format!("In side Buy the price {} is in prices tree but is missing in the price map", level_price).as_str());
-                cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
+                if let Some(order_queue) = self.bids.prices.get(level_price) {
+                    cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
+                }
             } else {
                 break;
             }
@@ -613,9 +592,8 @@ impl OrderBook {
 
 impl fmt::Display for OrderBook {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.asks).expect("Failed to write OrderBook asks");
-        writeln!(f, "------------------------------------")
-            .expect("Failed to write OrderBook side separator");
+        write!(f, "{}", self.asks)?;
+        writeln!(f, "------------------------------------")?;
         write!(f, "{}", self.bids)
     }
 }
