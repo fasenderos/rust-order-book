@@ -12,7 +12,7 @@ use crate::enums::JournalOp;
 /// and modifications, allowing for features like replay, auditing, or persistence.
 ///
 /// # Type Parameters
-/// - `T`: The original input payload of the operation (e.g., [`LimitOrderOptions`], [`Uuid`], etc.)
+/// - `T`: The original input payload of the operation (e.g., [`LimitOrderOptions`], [`OrderId`], etc.)
 ///
 /// # Fields
 /// - `op_id`: Unique operation ID, useful for ordering or deduplication.

@@ -6,9 +6,10 @@
 //! These types are used to track the outcome of submitted market or limit orders,
 //! including how much was executed, any remaining quantity, and the resulting trades.
 use crate::{
-    journal::JournalLog, order::get_order_time_in_force, OrderStatus, OrderType, Side, TimeInForce,
+    journal::JournalLog,
+    order::{get_order_time_in_force, OrderId},
+    OrderStatus, OrderType, Side, TimeInForce,
 };
-use uuid::Uuid;
 
 /// A report for an individual fill that occurred during order execution.
 ///
@@ -22,7 +23,7 @@ use uuid::Uuid;
 /// - `status`: The status of the order after the fill
 #[derive(Debug)]
 pub struct FillReport {
-    pub order_id: Uuid,
+    pub order_id: OrderId,
     pub price: u64,
     pub quantity: u64,
     pub status: OrderStatus,
@@ -56,7 +57,7 @@ pub struct FillReport {
 /// - `log`: Optional journal log (if journaling is enabled)
 #[derive(Debug)]
 pub struct ExecutionReport<OrderOptions> {
-    pub order_id: Uuid,
+    pub order_id: OrderId,
     pub orig_qty: u64,
     pub executed_qty: u64,
     pub remaining_qty: u64,
@@ -87,7 +88,7 @@ impl<T> ExecutionReport<T> {
     /// - `price`: Optional limit price (or placeholder for market orders)
     /// - `post_only`: Whether the order was post-only
     pub fn new(
-        id: Uuid,
+        id: OrderId,
         order_type: OrderType,
         side: Side,
         quantity: u64,
