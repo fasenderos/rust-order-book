@@ -13,13 +13,13 @@ fn main() {
         post_only: None,
     });
 
-    // let _ = ob.limit(LimitOrderOptions {
-    //     side: Side::Sell,
-    //     quantity: 80,
-    //     price: 70,
-    //     time_in_force: None,
-    //     post_only: None,
-    // });
+    let _ = ob.limit(LimitOrderOptions {
+        side: Side::Sell,
+        quantity: 80,
+        price: 70,
+        time_in_force: None,
+        post_only: None,
+    });
 
     // let _ = ob.limit(LimitOrderOptions {
     //     side: Side::Sell,

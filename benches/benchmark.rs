@@ -16,7 +16,7 @@ fn limitbook_benchmark(c: &mut Criterion) {
     limitbook::run(c);
 }
 
-criterion_group!(benches, rust_order_book_benchmark, /*lobster_benchmark, limitbook_benchmark*/);
+criterion_group!(benches, lobster_benchmark, limitbook_benchmark, rust_order_book_benchmark);
 criterion_main!(benches);
 
 // use criterion::{criterion_group, criterion_main, Criterion};

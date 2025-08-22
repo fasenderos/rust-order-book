@@ -541,7 +541,6 @@ impl OrderBook {
         }
         let mut cumulative_qty = 0;
         for level_price in self.asks.prices_tree.iter() {
-            println!("price {} & level price {}", price, *level_price);
             if price > *level_price && cumulative_qty < quantity {
                 if let Some(order_queue) = self.asks.prices.get(level_price) {
                     cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
@@ -561,7 +560,6 @@ impl OrderBook {
         let mut cumulative_qty = 0;
 
         for level_price in self.bids.prices_tree.iter() {
-            println!("price {} & level price {}", price, *level_price);
             if price <= *level_price && cumulative_qty < quantity {
                 if let Some(order_queue) = self.bids.prices.get(level_price) {
                     cumulative_qty = safe_add(cumulative_qty, order_queue.volume)

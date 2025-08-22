@@ -119,9 +119,9 @@ impl fmt::Display for OrderSide {
         };
 
         for price in iter {
-             if let Some(queue) = self.prices.get(&price){
-                 writeln!(f, "{} -> {}", price, queue.volume)?;
-             }
+            if let Some(queue) = self.prices.get(&price) {
+                writeln!(f, "{} -> {}", price, queue.volume)?;
+            }
         }
 
         Ok(())
