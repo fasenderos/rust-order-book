@@ -17,14 +17,6 @@ pub(crate) struct OrderSide {
 }
 
 impl OrderSide {
-    // pub fn new(side: Side) -> Self {
-    //     Self {
-    //         side,
-    //         prices: FxHashMap::default(),
-    //         prices_tree: RBQueue::<u64, _>::new(if side == Side::Buy { OrderSide::buy_cmp } else { OrderSide::sell_cmp }),
-    //         volume: 0,
-    //     }
-    // }
     pub fn with_capacity(side: Side, capacity: usize) -> Self {
         Self {
             side,
@@ -53,10 +45,12 @@ impl OrderSide {
             self.prices_tree.insert(price);
         }
 
-        if let Some(queue) = self.prices.get_mut(&price) {
-            self.volume = safe_add(self.volume, quantity);
-            queue.append(id, quantity);
-        }
+        let queue = self.prices.get_mut(&price).expect(
+            format!("OrderSide on {:?} is broken: price {} not in prices", self.side, price)
+                .as_str(),
+        );
+        self.volume = safe_add(self.volume, quantity);
+        queue.append(id, quantity);
     }
 
     // removes order from definite price level
@@ -145,7 +139,7 @@ mod tests {
     use rand::seq::SliceRandom;
 
     fn create_orderside(side: Side) -> OrderSide {
-        OrderSide::new(side)
+        OrderSide::with_capacity(side, 10)
     }
 
     #[test]
@@ -200,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_display_buy() {
-        let mut side = OrderSide::new(Side::Buy);
+        let mut side = OrderSide::with_capacity(Side::Buy, 10);
         side.append(new_order_id(), 100, 10);
         side.append(new_order_id(), 200, 20);
 
@@ -211,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_display_sell() {
-        let mut side = OrderSide::new(Side::Sell);
+        let mut side = OrderSide::with_capacity(Side::Sell, 10);
         side.append(new_order_id(), 50, 5);
         side.append(new_order_id(), 150, 15);
 
@@ -223,14 +217,14 @@ mod tests {
 
     #[test]
     fn test_display_empty() {
-        let side = OrderSide::new(Side::Buy);
+        let side = OrderSide::with_capacity(Side::Buy, 10);
         let output = format!("{}", side);
         assert!(output.is_empty());
     }
 
     #[test]
     fn stress_test_random() {
-        let mut os = OrderSide::new(Side::Buy);
+        let mut os = OrderSide::with_capacity(Side::Buy, 10);
         let mut rng = rng();
         let mut orders = Vec::new();
 
