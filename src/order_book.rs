@@ -21,9 +21,8 @@ use std::collections::BTreeMap;
 use std::{cmp, fmt};
 
 use crate::enums::JournalOp;
-use crate::math::math::{safe_add, safe_sub};
 use crate::order::{OrderId, Price, Quantity};
-use crate::utils::current_timestamp_millis;
+use crate::utils::{current_timestamp_millis, safe_add, safe_sub};
 use crate::{
     error::{make_error, ErrorType, Result},
     journal::JournalLog,
@@ -368,6 +367,7 @@ impl OrderBook {
             _ => None,
         }
     }
+
     /// Returns the current depth of the order book.
     ///
     /// The depth includes aggregated quantities at each price level

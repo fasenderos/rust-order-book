@@ -2,7 +2,6 @@ mod builder;
 mod enums;
 mod error;
 mod journal;
-mod math;
 mod options;
 mod order;
 mod order_book;
