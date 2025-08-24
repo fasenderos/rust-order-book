@@ -16,8 +16,7 @@
 //!     size: 10_000,
 //! });
 //! ```
-use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::{cmp, fmt};
 
 use crate::enums::JournalOp;
@@ -30,7 +29,7 @@ use crate::{
     {OrderStatus, OrderType, Side, TimeInForce},
 };
 use crate::{ExecutionReport, FillReport, OrderBookOptions};
-type Pool = FxHashMap<OrderId, LimitOrder>;
+type Pool = HashMap<OrderId, LimitOrder>;
 use std::collections::VecDeque;
 
 #[derive(Debug, PartialEq)]
@@ -72,7 +71,7 @@ impl OrderBook {
             symbol: symbol.to_string(),
             last_op: 0,
             nexst_order_id: 0,
-            orders: FxHashMap::with_capacity_and_hasher(100_000, FxBuildHasher),
+            orders: HashMap::with_capacity(100_000),
             asks: BTreeMap::new(),
             bids: BTreeMap::new(),
             journaling: opts.journaling,
@@ -101,12 +100,11 @@ impl OrderBook {
         &mut self,
         options: MarketOrderOptions,
     ) -> Result<ExecutionReport<MarketOrderOptions>> {
-        let mut order = MarketOrder::new(self.next_order_id(), options.clone());
         if let Err(err) = self.validate_market_order(&options) {
-            order.status = OrderStatus::Canceled;
             return Err(err);
         }
 
+        let mut order = MarketOrder::new(self.next_order_id(), options.clone());
         let mut report = ExecutionReport::new(
             order.id,
             OrderType::Market,
@@ -165,12 +163,10 @@ impl OrderBook {
         &mut self,
         options: LimitOrderOptions,
     ) -> Result<ExecutionReport<LimitOrderOptions>> {
-        let mut order = LimitOrder::new(self.next_order_id(), options.clone());
         if let Err(err) = self.validate_limit_order(&options) {
-            order.status = OrderStatus::Canceled;
             return Err(err);
         }
-
+        let mut order = LimitOrder::new(self.next_order_id(), options.clone());
         let mut report = ExecutionReport::new(
             order.id,
             OrderType::Limit,
@@ -339,6 +335,31 @@ impl OrderBook {
                 post_only: Some(order.post_only),
             }),
             (None, None) => return Err(make_error(ErrorType::InvalidPriceOrQuantity)),
+        }
+    }
+
+    /// Get all orders at a specific price level
+    pub fn get_orders_at_price(&self, price: u64, side: Side) -> Vec<LimitOrder> {
+        let mut orders = Vec::new();
+        let queue = match side {
+            Side::Buy => self.bids.get(&price),
+            Side::Sell => self.asks.get(&price),
+        };
+
+        if let Some(q) = queue {
+            for id in q {
+                if let Some(order) = self.orders.get(&id) {
+                    orders.push(order.clone());
+                }
+            }
+        }
+        orders
+    }
+
+    pub fn get_order(&self, id: OrderId) -> Option<LimitOrder> {
+        match self.orders.get(&id) {
+            Some(o) => Some(*o),
+            None => None,
         }
     }
 

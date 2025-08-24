@@ -41,17 +41,11 @@ mod tests_math {
     fn timestamp_is_close_to_systemtime_now() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let before = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let before = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
 
         let ts = current_timestamp_millis();
 
-        let after = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let after = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
 
         assert!(ts >= before && ts <= after);
     }
@@ -60,10 +54,7 @@ mod tests_math {
     fn timestamp_is_within_reasonable_delta() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let system_ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let system_ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
 
         let ts = current_timestamp_millis();
 

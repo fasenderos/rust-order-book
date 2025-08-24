@@ -2,21 +2,34 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 mod limitbook;
 mod lobster;
+mod orderbookrs;
 mod rust_order_book;
 
+pub const N_ORDERS: &[u64] = &[10_000];
+
 fn rust_order_book_benchmark(c: &mut Criterion) {
-    rust_order_book::run(c);
+    rust_order_book::run(c, N_ORDERS);
 }
 
 fn lobster_benchmark(c: &mut Criterion) {
-    lobster::run(c);
+    lobster::run(c, N_ORDERS);
 }
 
 fn limitbook_benchmark(c: &mut Criterion) {
-    limitbook::run(c);
+    limitbook::run(c, N_ORDERS);
 }
 
-criterion_group!(benches, lobster_benchmark, limitbook_benchmark, rust_order_book_benchmark);
+fn orderbook_rs_benchmark(c: &mut Criterion) {
+    orderbookrs::run(c, N_ORDERS);
+}
+
+criterion_group!(
+    benches,
+    lobster_benchmark,
+    limitbook_benchmark,
+    orderbook_rs_benchmark,
+    rust_order_book_benchmark
+);
 criterion_main!(benches);
 
 // use criterion::{criterion_group, criterion_main, Criterion};

@@ -2,10 +2,10 @@ use criterion::Criterion;
 use limitbook::{OrderBook, OrderSide};
 use rust_decimal::dec;
 
-pub fn run(c: &mut Criterion) {
+pub fn run(c: &mut Criterion, n_orders: &[u64]) {
     let mut group = c.benchmark_group("limitbook");
 
-    for &n in &[10_000] {
+    for &n in n_orders {
         group.bench_function(format!("Insert {} limit orders", n), |b| {
             b.iter(|| {
                 let mut ob = OrderBook::new(dec!(1)).unwrap();

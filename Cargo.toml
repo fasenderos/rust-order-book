@@ -24,18 +24,18 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-queues = "1.1.0"
-rb_tree = "0.5.0"
-rustc-hash = "2.1.1"
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 limitbook = "0.1.0"
 lobster = "0.7.0"
+orderbook-rs = "0.2.0"
+pricelevel = "0.2.0"
 rand = "0.9.2"
 rust_decimal = { version = "1.37.2", features = ["macros"] }
 serde_json = "1.0"
+uuid = "1.18.0"
 
 [[bench]]
 name = "benchmark"
