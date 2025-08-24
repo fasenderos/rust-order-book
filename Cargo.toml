@@ -1,18 +1,42 @@
 [package]
 name = "rust-order-book"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
+repository = 'https://github.com/fasenderos/rust-order-book'
+homepage = 'https://github.com/fasenderos/rust-order-book'
+description = "A Rust Lmit Order Book for high-frequency trading (HFT)."
+keywords = [
+    "orderbook",
+    "limit-order-book",
+    "order-book",
+    "rust-order-book",
+    "matching-algorithm",
+    "matching-engine",
+    "trading-algorithm",
+    "hft-trading",
+    "exchange",
+    "lob",
+    "trading",
+    "finance",
+]
+categories = ["finance", "algorithms", "data-structures", "cryptography::cryptocurrencies"]
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
-chrono = "0.4.41"
-rb_tree = "0.5.0"
-thiserror = "2.0.15"
-uuid = { version = "1.18.0", features = ["v4"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+limitbook = "0.1.0"
+lobster = "0.7.0"
+orderbook-rs = "0.2.0"
+pricelevel = "0.2.0"
 rand = "0.9.2"
+rust_decimal = { version = "1.37.2", features = ["macros"] }
+serde_json = "1.0"
+uuid = "1.18.0"
 
 [[bench]]
-name = "ob_benchmark"
+name = "benchmark"
 harness = false

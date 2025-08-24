@@ -1,0 +1,23 @@
+# --- Import management ---
+reorder_imports = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate" # Raggruppa per crate (es. std, uuid, ecc)
+
+# --- Style and layout ---
+edition = "2021"
+use_small_heuristics = "Max"      # Previene formattazione troppo compatta
+wrap_comments = true              # Manda a capo i commenti lunghi
+format_code_in_doc_comments = true
+
+# --- Visual spacing ---
+normalize_comments = true
+newline_style = "Unix"
+empty_item_single_line = false
+
+# --- Structs and enums ---
+struct_field_align_threshold = 0  # Disabilita l’allineamento verticale (più diffuso oggi)
+enum_discrim_align_threshold = 0
+
+# --- Misc ---
+max_width = 100
+tab_spaces = 4
