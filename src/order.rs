@@ -5,6 +5,8 @@
 //! or [`LimitOrder`] directly.
 
 pub type OrderId = u64;
+pub type Price = u64;
+pub type Quantity = u64;
 
 use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeInForce};
 

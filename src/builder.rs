@@ -53,7 +53,7 @@ impl OrderBookBuilder {
     /// # Returns
     /// An [`OrderBook`] with the configured options.
     pub fn build(self) -> OrderBook {
-        OrderBook::new(self.symbol, self.options)
+        OrderBook::new(self.symbol.as_str(), self.options)
     }
 }
 
@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn test_builder_with_defaults() {
         let ob = OrderBookBuilder::new("BTCUSD").build();
-        assert_eq!(ob.symbol, "BTCUSD");
+        assert_eq!(ob.symbol(), "BTCUSD");
         assert_eq!(ob.journaling, false);
     }
 
@@ -72,7 +72,7 @@ mod tests {
     fn test_builder_with_journaling_enabled() {
         let ob = OrderBookBuilder::new("ETHUSD").with_journaling(true).build();
 
-        assert_eq!(ob.symbol, "ETHUSD");
+        assert_eq!(ob.symbol(), "ETHUSD");
         assert!(ob.journaling);
     }
 
@@ -82,7 +82,7 @@ mod tests {
 
         let ob = OrderBookBuilder::new("DOGEUSD").with_options(opts.clone()).build();
 
-        assert_eq!(ob.symbol, "DOGEUSD");
+        assert_eq!(ob.symbol(), "DOGEUSD");
         assert_eq!(ob.journaling, opts.journaling);
     }
 }

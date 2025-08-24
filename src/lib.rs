@@ -6,8 +6,6 @@ mod math;
 mod options;
 mod order;
 mod order_book;
-mod order_queue;
-mod order_side;
 mod report;
 mod utils;
 

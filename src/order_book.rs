@@ -17,26 +17,27 @@
 //! });
 //! ```
 use rustc_hash::{FxBuildHasher, FxHashMap};
+use std::collections::BTreeMap;
 use std::{cmp, fmt};
 
 use crate::enums::JournalOp;
 use crate::math::math::{safe_add, safe_sub};
-use crate::order::OrderId;
+use crate::order::{OrderId, Price, Quantity};
 use crate::utils::current_timestamp_millis;
 use crate::{
     error::{make_error, ErrorType, Result},
     journal::JournalLog,
     order::{LimitOrder, LimitOrderOptions, MarketOrder, MarketOrderOptions},
-    order_queue::OrderQueue,
-    order_side::OrderSide,
     {OrderStatus, OrderType, Side, TimeInForce},
 };
 use crate::{ExecutionReport, FillReport, OrderBookOptions};
+type Pool = FxHashMap<OrderId, LimitOrder>;
+use std::collections::VecDeque;
 
 #[derive(Debug, PartialEq)]
 pub struct Depth {
-    pub asks: Vec<(u64, u64)>, // (price, volume)
-    pub bids: Vec<(u64, u64)>, // (price, volume)
+    pub asks: Vec<(Price, Quantity)>, // (price, volume)
+    pub bids: Vec<(Price, Quantity)>, // (price, volume)
 }
 
 /// A limit order book implementation with support for market orders,
@@ -45,13 +46,12 @@ pub struct Depth {
 /// Use [`OrderBookBuilder`] to create an instance with optional features
 /// like journaling or snapshot restoration.
 pub struct OrderBook {
-    pub last_op: u64,
-    pub market_price: u64,
-    pub symbol: String,
-    next_id: OrderId,
-    orders: FxHashMap<OrderId, LimitOrder>,
-    asks: OrderSide,
-    bids: OrderSide,
+    pub(crate) last_op: u64,
+    pub(crate) symbol: String,
+    pub(crate) nexst_order_id: OrderId,
+    pub(crate) orders: Pool,
+    pub(crate) asks: BTreeMap<u64, VecDeque<OrderId>>,
+    pub(crate) bids: BTreeMap<u64, VecDeque<OrderId>>,
     pub(crate) journaling: bool,
 }
 
@@ -66,19 +66,23 @@ impl OrderBook {
     ///
     /// # Example
     /// ```
-    /// let ob = OrderBook::new("BTCUSD".to_string(), OrderBookOptions::default());
+    /// let ob = OrderBook::new("BTCUSD", OrderBookOptions::default());
     /// ```
-    pub fn new(symbol: String, opts: OrderBookOptions) -> Self {
+    pub fn new(symbol: &str, opts: OrderBookOptions) -> Self {
         Self {
+            symbol: symbol.to_string(),
             last_op: 0,
-            market_price: 0,
-            next_id: 0,
+            nexst_order_id: 0,
             orders: FxHashMap::with_capacity_and_hasher(100_000, FxBuildHasher),
-            asks: OrderSide::with_capacity(Side::Sell, 1_000),
-            bids: OrderSide::with_capacity(Side::Buy, 1_000),
+            asks: BTreeMap::new(),
+            bids: BTreeMap::new(),
             journaling: opts.journaling,
-            symbol,
         }
+    }
+
+    /// Get the symbol of this order book
+    pub fn symbol(&self) -> &str {
+        &self.symbol
     }
 
     /// Executes a market order against the order book.
@@ -115,38 +119,12 @@ impl OrderBook {
             false,
         );
 
-        let mut quantity_to_trade = order.remaining_qty;
-        let is_buy = order.side == Side::Buy;
-
-        while quantity_to_trade > 0 {
-            let side_is_empty = if is_buy { self.asks.is_empty() } else { self.bids.is_empty() };
-            if side_is_empty {
-                break;
-            }
-
-            let (best_price, mut best_price_queue) = {
-                let side = self.get_opposite_order_side_mut(order.side);
-                let best_price = if is_buy { side.min_price() } else { side.max_price() };
-                let Some(price) = best_price else { break };
-                let Some(q) = side.take_queue(price) else { break };
-                (price, q)
-            };
-
-            let fills = self.process_queue(&mut best_price_queue, &mut quantity_to_trade);
-
-            order.remaining_qty = quantity_to_trade;
-            order.executed_qty = safe_sub(order.orig_qty, quantity_to_trade);
-
-            report.fills.extend(fills);
-
-            {
-                let side = self.get_opposite_order_side_mut(order.side);
-                if best_price_queue.is_not_empty() {
-                    side.put_queue(best_price, best_price_queue);
-                }
-            }
-        }
-
+        let mut fills = Vec::new();
+        order.remaining_qty = match order.side {
+            Side::Buy => self.match_with_asks(order.remaining_qty, &mut fills, None),
+            Side::Sell => self.match_with_bids(order.remaining_qty, &mut fills, None),
+        };
+        order.executed_qty = safe_sub(order.orig_qty, order.remaining_qty);
         order.status = if order.remaining_qty > 0 {
             OrderStatus::PartiallyFilled
         } else {
@@ -205,53 +183,25 @@ impl OrderBook {
             order.post_only,
         );
 
-        let mut quantity_to_trade = order.orig_qty;
-        let is_buy = order.side == Side::Buy;
+        let mut fills = Vec::new();
+        order.remaining_qty = match order.side {
+            Side::Buy => self.match_with_asks(order.remaining_qty, &mut fills, Some(order.price)),
+            Side::Sell => self.match_with_bids(order.remaining_qty, &mut fills, Some(order.price)),
+        };
+        order.executed_qty = safe_sub(order.orig_qty, order.remaining_qty);
+        order.taker_qty = safe_sub(order.orig_qty, order.remaining_qty);
+        order.maker_qty = order.remaining_qty;
 
-        while quantity_to_trade > 0 {
-            let side_is_empty = if is_buy { self.asks.is_empty() } else { self.bids.is_empty() };
-            if side_is_empty {
-                break;
-            }
-
-            let (best_price, mut best_price_queue) = {
-                let side = self.get_opposite_order_side_mut(order.side);
-                let best_price = if is_buy { side.min_price() } else { side.max_price() };
-                let Some(price) = best_price else { break };
-                if (is_buy && order.price < price) || (!is_buy && order.price > price) {
-                    break;
-                }
-                let Some(q) = side.take_queue(price) else { break };
-                (price, q)
-            };
-
-            if order.post_only {
-                return Err(make_error(ErrorType::OrderPostOnly));
-            }
-
-            let fills = self.process_queue(&mut best_price_queue, &mut quantity_to_trade);
-
-            order.remaining_qty = quantity_to_trade;
-            order.executed_qty = safe_sub(order.orig_qty, quantity_to_trade);
-
-            report.fills.extend(fills);
-
-            {
-                let side = self.get_opposite_order_side_mut(order.side);
-                if best_price_queue.is_not_empty() {
-                    side.put_queue(best_price, best_price_queue);
-                }
-            }
-        }
-
-        order.taker_qty = safe_sub(order.orig_qty, quantity_to_trade);
-        order.maker_qty = quantity_to_trade;
-
-        if quantity_to_trade > 0 {
+        if order.remaining_qty > 0 {
             order.status = OrderStatus::PartiallyFilled;
-            let side = self.get_order_side_mut(order.side);
-            side.append(order.id, order.remaining_qty, order.price);
             self.orders.insert(order.id, order);
+            if order.side == Side::Buy {
+                let _ =
+                    self.bids.entry(order.price).or_insert_with(VecDeque::new).push_back(order.id);
+            } else {
+                let _ =
+                    self.asks.entry(order.price).or_insert_with(VecDeque::new).push_back(order.id);
+            }
         } else {
             order.status = OrderStatus::Filled;
         }
@@ -261,11 +211,6 @@ impl OrderBook {
         report.taker_qty = order.taker_qty;
         report.maker_qty = order.maker_qty;
         report.status = order.status;
-
-        // If IOC order was not matched completely remove from the order book
-        // if time_in_force == TimeInForce::IOC && response.quantity_left > 0 {
-        // 	self.cancel_order(order.id);
-        // }
 
         if self.journaling {
             self.last_op = safe_add(self.last_op, 1);
@@ -291,41 +236,26 @@ impl OrderBook {
     /// # Errors
     /// Returns `Err` if the order is not found.
     pub fn cancel(&mut self, id: OrderId) -> Result<ExecutionReport<OrderId>> {
-        let (side, price) = match self.orders.get(&id) {
-            Some(o) => (o.side, o.price),
+        let mut order = match self.orders.remove(&id) {
+            Some(o) => o,
             None => return Err(make_error(ErrorType::OrderNotFound)),
         };
 
-        let mut queue = {
-            if side == Side::Buy {
-                self.bids.take_queue(price).expect(
-                    format!(
-                        "Failed to delete order: Side {:?} is missing the price {}",
-                        side, price
-                    )
-                    .as_str(),
-                )
-            } else {
-                self.asks.take_queue(price).expect(
-                    format!(
-                        "Failed to delete order: Side {:?} is missing the price {}",
-                        side, price
-                    )
-                    .as_str(),
-                )
-            }
+        let book_side = match order.side {
+            Side::Buy => &mut self.bids,
+            Side::Sell => &mut self.asks,
         };
 
-        let mut order = self.cancel_order(id, &mut queue);
-        order.status = OrderStatus::Canceled;
-
-        if queue.is_not_empty() {
-            if side == Side::Buy {
-                self.bids.put_queue(price, queue);
-            } else {
-                self.asks.put_queue(price, queue);
+        if let Some(queue) = book_side.get_mut(&order.price) {
+            if let Some(pos) = queue.iter().position(|x| *x == id) {
+                queue.remove(pos);
+            }
+            if queue.is_empty() {
+                book_side.remove(&order.price);
             }
         }
+
+        order.status = OrderStatus::Canceled;
 
         let mut report = ExecutionReport {
             order_id: order.id,
@@ -413,6 +343,31 @@ impl OrderBook {
         }
     }
 
+    /// Get the best bid price, if any
+    pub fn best_bid(&self) -> Option<Price> {
+        self.bids.last_key_value().map(|(price, _)| *price)
+    }
+
+    /// Get the best ask price, if any
+    pub fn best_ask(&self) -> Option<Price> {
+        self.asks.first_key_value().map(|(price, _)| *price)
+    }
+
+    /// Get the mid price (average of best bid and best ask)
+    pub fn mid_price(&self) -> Option<Price> {
+        match (self.best_bid(), self.best_ask()) {
+            (Some(bid), Some(ask)) => Some(safe_add(bid, ask) / 2),
+            _ => None,
+        }
+    }
+
+    /// Get the spread (best ask - best bid)
+    pub fn spread(&self) -> Option<Price> {
+        match (self.best_bid(), self.best_ask()) {
+            (Some(bid), Some(ask)) => Some(safe_sub(ask, bid)),
+            _ => None,
+        }
+    }
     /// Returns the current depth of the order book.
     ///
     /// The depth includes aggregated quantities at each price level
@@ -423,88 +378,138 @@ impl OrderBook {
     ///
     /// # Returns
     /// A [`Depth`] struct containing the order book snapshot.
-    pub fn depth(&self, limit: Option<u32>) -> Depth {
+    pub fn depth(&self, limit: Option<usize>) -> Depth {
         let limit = cmp::max(limit.unwrap_or(100), 1000);
-        let asks = self.asks.depth(limit);
-        let bids = self.bids.depth(limit);
+        let mut asks = Vec::with_capacity(limit);
+        let mut bids = Vec::with_capacity(limit);
+
+        for (ask_price, queue) in self.asks.iter() {
+            let volume: u64 = queue
+                .iter()
+                .filter_map(|id| self.orders.get(id))
+                .map(|order| order.remaining_qty)
+                .sum();
+            asks.push((*ask_price, volume));
+        }
+
+        for (bid_price, queue) in self.bids.iter().rev() {
+            let volume: u64 = queue
+                .iter()
+                .filter_map(|id| self.orders.get(id))
+                .map(|order| order.remaining_qty)
+                .sum();
+            bids.push((*bid_price, volume));
+        }
+
         Depth { asks, bids }
     }
 
-    fn process_queue(
+    fn match_with_asks(
         &mut self,
-        order_queue: &mut OrderQueue,
-        quantity_left: &mut u64,
-    ) -> Vec<FillReport> {
-        let mut fills = Vec::new();
-
-        while order_queue.is_not_empty() && *quantity_left > 0 {
-            let Some(head_order_uuid) = order_queue.head() else { break };
-            let (head_quantity, head_price) = match self.orders.get(&head_order_uuid) {
-                Some(o) => (o.remaining_qty, o.price),
-                None => break,
-            };
-
-            if *quantity_left < head_quantity {
-                {
-                    match self.orders.get_mut(&head_order_uuid) {
-                        None => break,
-                        Some(head_order) => {
-                            head_order.remaining_qty =
-                                safe_sub(head_order.remaining_qty, *quantity_left);
-                            head_order.executed_qty =
-                                safe_add(head_order.executed_qty, *quantity_left);
-                            head_order.status = OrderStatus::PartiallyFilled;
-
-                            fills.push(FillReport {
-                                order_id: head_order.id,
-                                price: head_order.price,
-                                quantity: *quantity_left,
-                                status: head_order.status,
-                            });
-
-                            order_queue.update(
-                                head_order_uuid,
-                                head_quantity,
-                                head_order.remaining_qty,
-                            );
-                        }
-                    }
-                }
-                *quantity_left = 0;
-            } else {
-                *quantity_left = safe_sub(*quantity_left, head_quantity);
-
-                let mut canceled_order = self.cancel_order(head_order_uuid, order_queue);
-                canceled_order.executed_qty = safe_add(canceled_order.executed_qty, head_quantity);
-                canceled_order.remaining_qty = 0;
-                canceled_order.status = OrderStatus::Filled;
-                fills.push(FillReport {
-                    order_id: canceled_order.id,
-                    price: canceled_order.price,
-                    quantity: canceled_order.executed_qty,
-                    status: canceled_order.status,
-                });
-            }
-            self.market_price = head_price;
+        quantity_to_fill: Quantity,
+        fills: &mut Vec<FillReport>,
+        limit_price: Option<Price>,
+    ) -> Quantity {
+        // Early exit if the side is empty
+        if self.asks.is_empty() {
+            return quantity_to_fill;
         }
-        fills
+        let mut remaining_qty = quantity_to_fill;
+        let mut filled_prices = Vec::new();
+        for (ask_price, queue) in self.asks.iter_mut() {
+            if remaining_qty <= 0 {
+                break;
+            }
+            if let Some(limit_price) = limit_price {
+                if limit_price < *ask_price {
+                    break;
+                }
+            }
+            remaining_qty = Self::process_queue(&mut self.orders, queue, remaining_qty, fills);
+            if queue.is_empty() {
+                filled_prices.push(*ask_price);
+            }
+        }
+        for price in filled_prices {
+            self.asks.remove(&price);
+        }
+        remaining_qty
     }
 
-    fn cancel_order(&mut self, id: OrderId, order_queue: &mut OrderQueue) -> LimitOrder {
-        // here the order id always exists in the engine
-        let order = self.orders.get(&id).expect(
-            format!("Failed to delete order: The order {} is not in the orders map", id).as_str(),
-        );
-
-        if order.side == Side::Buy {
-            self.bids.remove(order.id, order.remaining_qty, order.price, order_queue);
-        } else {
-            self.asks.remove(order.id, order.remaining_qty, order.price, order_queue);
+    fn match_with_bids(
+        &mut self,
+        quantity_to_fill: Quantity,
+        fills: &mut Vec<FillReport>,
+        limit_price: Option<Price>,
+    ) -> Quantity {
+        // Early exit if the side is empty
+        if self.bids.is_empty() {
+            return quantity_to_fill;
         }
+        let mut remaining_qty = quantity_to_fill;
+        let mut filled_prices = Vec::new();
+        for (bid_price, queue) in self.bids.iter_mut().rev() {
+            if remaining_qty <= 0 {
+                break;
+            }
+            if let Some(limit_price) = limit_price {
+                if limit_price > *bid_price {
+                    break;
+                }
+            }
+            remaining_qty = Self::process_queue(&mut self.orders, queue, remaining_qty, fills);
+            if queue.is_empty() {
+                filled_prices.push(*bid_price);
+            }
+        }
+        for price in filled_prices {
+            self.bids.remove(&price);
+        }
+        remaining_qty
+    }
 
-        self.orders.remove(&id).expect(
-            format!("Failed to delete order: The order {} is not in the orders map", id).as_str(),
-        )
+    fn process_queue(
+        orders: &mut Pool,
+        order_queue: &mut VecDeque<OrderId>,
+        remaining_qty: Quantity,
+        fills: &mut Vec<FillReport>,
+    ) -> Quantity {
+        let mut quantity_left = remaining_qty;
+        while !order_queue.is_empty() && quantity_left > 0 {
+            let Some(head_order_uuid) = order_queue.front() else { break };
+            let Some(mut head_order) = orders.remove(&head_order_uuid) else { break };
+
+            if quantity_left < head_order.remaining_qty {
+                head_order.remaining_qty = safe_sub(head_order.remaining_qty, quantity_left);
+                head_order.executed_qty = safe_add(head_order.executed_qty, quantity_left);
+                head_order.status = OrderStatus::PartiallyFilled;
+                fills.push(FillReport {
+                    order_id: head_order.id,
+                    price: head_order.price,
+                    quantity: quantity_left,
+                    status: head_order.status,
+                });
+                orders.insert(head_order.id, head_order);
+
+                quantity_left = 0;
+            } else {
+                order_queue.pop_front();
+                quantity_left = safe_sub(quantity_left, head_order.remaining_qty);
+
+                // let mut canceled_order = self.cancel_order(head_order_uuid, order_queue);
+                head_order.executed_qty =
+                    safe_add(head_order.executed_qty, head_order.remaining_qty);
+                head_order.remaining_qty = 0;
+                head_order.status = OrderStatus::Filled;
+                fills.push(FillReport {
+                    order_id: head_order.id,
+                    price: head_order.price,
+                    quantity: head_order.executed_qty,
+                    status: head_order.status,
+                });
+            }
+        }
+        quantity_left
     }
 
     fn validate_market_order(&self, options: &MarketOrderOptions) -> Result<()> {
@@ -532,6 +537,28 @@ impl OrderBook {
                 return Err(make_error(ErrorType::OrderFOK));
             }
         }
+        if options.post_only.unwrap_or(false) {
+            let crosses = match options.side {
+                Side::Buy => {
+                    if let Some((best_ask, _)) = self.asks.first_key_value() {
+                        options.price >= *best_ask
+                    } else {
+                        false
+                    }
+                }
+                Side::Sell => {
+                    if let Some((best_bid, _)) = self.bids.last_key_value() {
+                        options.price <= *best_bid
+                    } else {
+                        false
+                    }
+                }
+            };
+
+            if crosses {
+                return Err(make_error(ErrorType::OrderPostOnly));
+            }
+        }
         Ok(())
     }
 
@@ -544,14 +571,13 @@ impl OrderBook {
     }
 
     fn limit_buy_order_is_fillable(&self, quantity: u64, price: u64) -> bool {
-        if self.asks.volume < quantity {
-            return false;
-        }
         let mut cumulative_qty = 0;
-        for level_price in self.asks.prices_tree.iter() {
-            if price > *level_price && cumulative_qty < quantity {
-                if let Some(order_queue) = self.asks.prices.get(level_price) {
-                    cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
+        for (ask_price, queue) in self.asks.iter() {
+            if price >= *ask_price && cumulative_qty < quantity {
+                for id in queue.iter() {
+                    if let Some(order) = self.orders.get(&id) {
+                        cumulative_qty = safe_add(cumulative_qty, order.remaining_qty)
+                    }
                 }
             } else {
                 break;
@@ -561,16 +587,13 @@ impl OrderBook {
     }
 
     fn limit_sell_order_is_fillable(&self, quantity: u64, price: u64) -> bool {
-        if self.bids.volume < quantity {
-            return false;
-        }
-
         let mut cumulative_qty = 0;
-
-        for level_price in self.bids.prices_tree.iter() {
-            if price <= *level_price && cumulative_qty < quantity {
-                if let Some(order_queue) = self.bids.prices.get(level_price) {
-                    cumulative_qty = safe_add(cumulative_qty, order_queue.volume)
+        for (bid_price, queue) in self.bids.iter().rev() {
+            if price <= *bid_price && cumulative_qty < quantity {
+                for id in queue.iter() {
+                    if let Some(order) = self.orders.get(&id) {
+                        cumulative_qty = safe_add(cumulative_qty, order.remaining_qty)
+                    }
                 }
             } else {
                 break;
@@ -579,521 +602,594 @@ impl OrderBook {
         cumulative_qty >= quantity
     }
 
-    fn get_order_side_mut(&mut self, side: Side) -> &mut OrderSide {
-        if side == Side::Buy {
-            &mut self.bids
-        } else {
-            &mut self.asks
-        }
-    }
-
-    fn get_opposite_order_side_mut(&mut self, side: Side) -> &mut OrderSide {
-        if side == Side::Buy {
-            &mut self.asks
-        } else {
-            &mut self.bids
-        }
-    }
-
     fn next_order_id(&mut self) -> OrderId {
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.nexst_order_id;
+        self.nexst_order_id += 1;
         id
     }
 }
 
 impl fmt::Display for OrderBook {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.asks)?;
+        // --- ASK (decrescente) ---
+        for (price, order_ids) in self.asks.iter().rev() {
+            let volume: u64 = order_ids
+                .iter()
+                .filter_map(|id| self.orders.get(id))
+                .map(|order| order.remaining_qty)
+                .sum();
+
+            writeln!(f, "{} -> {}", price, volume)?;
+        }
+
         writeln!(f, "------------------------------------")?;
-        write!(f, "{}", self.bids)
+
+        // --- BID (decrescente) ---
+        for (price, order_ids) in self.bids.iter().rev() {
+            let volume: u64 = order_ids
+                .iter()
+                .filter_map(|id| self.orders.get(id))
+                .map(|order| order.remaining_qty)
+                .sum();
+
+            writeln!(f, "{} -> {}", price, volume)?;
+        }
+
+        Ok(())
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::{utils::new_order_id, OrderBookBuilder};
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{OrderBook, OrderBookBuilder};
 
-//     fn make_uuid() -> OrderId {
-//         new_order_id()
-//     }
+    fn make_order_book(options: Option<OrderBookOptions>) -> OrderBook {
+        OrderBookBuilder::new("BTC-USD")
+            .with_options(options.unwrap_or(OrderBookOptions::default()))
+            .build()
+    }
 
-//     fn make_order_book(options: Option<OrderBookOptions>) -> OrderBook {
-//         OrderBookBuilder::new("BTC-USD")
-//             .with_options(options.unwrap_or(OrderBookOptions::default()))
-//             .build()
-//     }
+    fn get_populated_order_book(
+        limit_orders: Vec<(Side, u64, u64)>,
+        options: Option<OrderBookOptions>,
+    ) -> OrderBook {
+        let mut ob = make_order_book(options);
+        for (side, quantity, price) in limit_orders {
+            let order =
+                LimitOrderOptions { side, quantity, price, time_in_force: None, post_only: None };
+            let _ = ob.limit(order);
+        }
+        ob
+    }
 
-//     fn get_populated_order_book(
-//         limit_orders: Vec<(Side, u64, u64)>,
-//         options: Option<OrderBookOptions>,
-//     ) -> OrderBook {
-//         let mut ob = make_order_book(options);
-//         for (side, quantity, price) in limit_orders {
-//             let order =
-//                 LimitOrderOptions { side, quantity, price, time_in_force: None, post_only: None };
-//             let _ = ob.limit(order);
-//         }
-//         ob
-//     }
+    #[test]
+    fn test_market_order() {
+        let mut ob = get_populated_order_book(
+            vec![
+                (Side::Buy, 5, 998),
+                (Side::Buy, 3, 999),
+                (Side::Sell, 3, 1001),
+                (Side::Sell, 5, 1002),
+            ],
+            Some(OrderBookOptions { journaling: true }),
+        );
 
-//     #[test]
-//     fn test_market_order() {
-//         let mut ob = get_populated_order_book(
-//             vec![
-//                 (Side::Buy, 5, 998),
-//                 (Side::Buy, 3, 999),
-//                 (Side::Sell, 3, 1001),
-//                 (Side::Sell, 5, 1002),
-//             ],
-//             Some(OrderBookOptions { journaling: true }),
-//         );
+        let m1 = MarketOrderOptions { side: Side::Buy, quantity: 4 };
+        let m2 = MarketOrderOptions { side: Side::Sell, quantity: 4 };
+        // this order should fill the entire order side
+        let m3 = MarketOrderOptions { side: Side::Sell, quantity: 10 };
 
-//         let m1 = MarketOrderOptions { side: Side::Buy, quantity: 4 };
-//         let m2 = MarketOrderOptions { side: Side::Sell, quantity: 4 };
-//         // this order should fill the entire order side
-//         let m3 = MarketOrderOptions { side: Side::Sell, quantity: 10 };
+        let resp = ob.market(m1);
+        let resp = resp.unwrap();
+        let depth = ob.depth(Some(10));
+        assert_eq!(depth.asks, vec![(1002, 4)]);
+        assert_eq!(depth.bids, vec![(999, 3), (998, 5)]);
+        assert_eq!(resp.orig_qty, m1.quantity);
+        assert_eq!(resp.executed_qty, m1.quantity);
+        assert_eq!(resp.remaining_qty, 0);
+        assert_eq!(resp.taker_qty, m1.quantity);
+        assert_eq!(resp.maker_qty, 0);
+        assert_eq!(resp.side, m1.side);
+        assert_eq!(resp.status, OrderStatus::Filled);
+        assert_eq!(resp.log.unwrap().o, m1);
+        assert_eq!(resp.log.unwrap().op, JournalOp::Market);
 
-//         let resp = ob.market(m1);
-//         let resp = resp.unwrap();
-//         assert_eq!(ob.asks.depth(10), vec!((1002, 4)));
-//         assert_eq!(ob.bids.depth(10), vec!((999, 3), (998, 5)));
-//         assert_eq!(resp.orig_qty, m1.quantity);
-//         assert_eq!(resp.executed_qty, m1.quantity);
-//         assert_eq!(resp.remaining_qty, 0);
-//         assert_eq!(resp.taker_qty, m1.quantity);
-//         assert_eq!(resp.maker_qty, 0);
-//         assert_eq!(resp.side, m1.side);
-//         assert_eq!(resp.status, OrderStatus::Filled);
-//         assert_eq!(resp.log.unwrap().o, m1);
-//         assert_eq!(resp.log.unwrap().op, JournalOp::Market);
+        let resp = ob.market(m2);
+        let resp = resp.unwrap();
+        assert_eq!(ob.depth(Some(10)).asks, vec!((1002, 4)));
+        assert_eq!(ob.depth(Some(10)).bids, vec!((998, 4)));
+        assert_eq!(resp.orig_qty, m2.quantity);
+        assert_eq!(resp.executed_qty, m2.quantity);
+        assert_eq!(resp.remaining_qty, 0);
+        assert_eq!(resp.taker_qty, m2.quantity);
+        assert_eq!(resp.maker_qty, 0);
+        assert_eq!(resp.side, m2.side);
+        assert_eq!(resp.status, OrderStatus::Filled);
+        assert_eq!(resp.log.unwrap().o, m2);
+        assert_eq!(resp.log.unwrap().op, JournalOp::Market);
 
-//         let resp = ob.market(m2);
-//         let resp = resp.unwrap();
-//         assert_eq!(ob.asks.depth(10), vec!((1002, 4)));
-//         assert_eq!(ob.bids.depth(10), vec!((998, 4)));
-//         assert_eq!(resp.orig_qty, m2.quantity);
-//         assert_eq!(resp.executed_qty, m2.quantity);
-//         assert_eq!(resp.remaining_qty, 0);
-//         assert_eq!(resp.taker_qty, m2.quantity);
-//         assert_eq!(resp.maker_qty, 0);
-//         assert_eq!(resp.side, m2.side);
-//         assert_eq!(resp.status, OrderStatus::Filled);
-//         assert_eq!(resp.log.unwrap().o, m2);
-//         assert_eq!(resp.log.unwrap().op, JournalOp::Market);
+        let resp = ob.market(m3);
+        let resp = resp.unwrap();
+        assert_eq!(resp.executed_qty, 4);
+        assert_eq!(resp.remaining_qty, 6);
+        assert_eq!(resp.status, OrderStatus::PartiallyFilled);
+        assert_eq!(resp.log.unwrap().o, m3);
+        assert_eq!(resp.log.unwrap().op, JournalOp::Market);
+    }
 
-//         let resp = ob.market(m3);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.executed_qty, 4);
-//         assert_eq!(resp.remaining_qty, 6);
-//         assert_eq!(resp.status, OrderStatus::PartiallyFilled);
-//         assert_eq!(resp.log.unwrap().o, m3);
-//         assert_eq!(resp.log.unwrap().op, JournalOp::Market);
-//     }
+    #[test]
+    fn test_market_order_errors() {
+        let mut ob = get_populated_order_book(vec![(Side::Buy, 5, 1000)], None);
 
-//     #[test]
-//     fn test_market_order_errors() {
-//         let mut ob = get_populated_order_book(vec![(Side::Buy, 5, 1000)], None);
+        // invalid quantity
+        let m1 = MarketOrderOptions { side: Side::Buy, quantity: 0 };
+        let resp = ob.market(m1);
+        assert_eq!(
+            resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code),
+            true
+        );
 
-//         // invalid quantity
-//         let m1 = MarketOrderOptions { side: Side::Buy, quantity: 0 };
-//         let resp = ob.market(m1);
-//         assert_eq!(
-//             resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code),
-//             true
-//         );
+        // side empty
+        let m2 = MarketOrderOptions { side: Side::Buy, quantity: 10 };
+        let resp = ob.market(m2);
+        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderBookEmpty).code), true);
+    }
 
-//         // side empty
-//         let m2 = MarketOrderOptions { side: Side::Buy, quantity: 10 };
-//         let resp = ob.market(m2);
-//         assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderBookEmpty).code), true);
-//     }
+    #[test]
+    fn test_limit_order() {
+        let mut ob = make_order_book(None);
+        let l1 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 5,
+            price: 1000,
+            time_in_force: None,
+            post_only: None,
+        };
+        let l2 = LimitOrderOptions {
+            side: Side::Sell,
+            quantity: 5,
+            price: 1100,
+            time_in_force: None,
+            post_only: None,
+        };
 
-//     #[test]
-//     fn test_limit_order() {
-//         let mut ob = make_order_book(None);
-//         let l1 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 5,
-//             price: 1000,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let l2 = LimitOrderOptions {
-//             side: Side::Sell,
-//             quantity: 5,
-//             price: 1100,
-//             time_in_force: None,
-//             post_only: None,
-//         };
+        let _ = ob.limit(l1);
+        assert_eq!(ob.depth(Some(10)).bids, vec!((1000, 5)));
+        assert_eq!(ob.depth(Some(10)).asks, vec!());
 
-//         let _ = ob.limit(l1);
-//         assert_eq!(ob.bids.depth(10), vec!((1000, 5)));
-//         assert_eq!(ob.asks.depth(10), vec!());
+        let _ = ob.limit(l2);
+        assert_eq!(ob.depth(Some(10)).bids, vec!((1000, 5)));
+        assert_eq!(ob.depth(Some(10)).asks, vec!((1100, 5)));
 
-//         let _ = ob.limit(l2);
-//         assert_eq!(ob.bids.depth(10), vec!((1000, 5)));
-//         assert_eq!(ob.asks.depth(10), vec!((1100, 5)));
+        // immediate matching limit order
+        let l3 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 3,
+            price: 1100,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l3);
+        let resp = resp.unwrap();
+        assert_eq!(resp.executed_qty, l3.quantity);
+        assert_eq!(resp.remaining_qty, 0);
+        assert_eq!(resp.taker_qty, l3.quantity);
+        assert_eq!(resp.status, OrderStatus::Filled);
+        assert!(resp.log.is_none());
 
-//         // immediate matching limit order
-//         let l3 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 3,
-//             price: 1100,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l3);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.executed_qty, l3.quantity);
-//         assert_eq!(resp.remaining_qty, 0);
-//         assert_eq!(resp.taker_qty, l3.quantity);
-//         assert_eq!(resp.status, OrderStatus::Filled);
-//         assert!(resp.log.is_none());
+        // immediate matching limit order that fill the entire side
+        let l4 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 10,
+            price: 1100,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l4);
+        let resp = resp.unwrap();
+        assert_eq!(resp.executed_qty, 2);
+        assert_eq!(resp.remaining_qty, 8);
+        assert_eq!(resp.taker_qty, 2);
+        assert_eq!(resp.maker_qty, 8);
+        assert_eq!(resp.status, OrderStatus::PartiallyFilled);
+        assert!(resp.log.is_none());
 
-//         // immediate matching limit order that fill the entire side
-//         let l4 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 10,
-//             price: 1100,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l4);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.executed_qty, 2);
-//         assert_eq!(resp.remaining_qty, 8);
-//         assert_eq!(resp.taker_qty, 2);
-//         assert_eq!(resp.maker_qty, 8);
-//         assert_eq!(resp.status, OrderStatus::PartiallyFilled);
-//         assert!(resp.log.is_none());
+        // Test FOK order
+        let l5 = LimitOrderOptions {
+            side: Side::Sell,
+            quantity: 5,
+            price: 1100,
+            time_in_force: Some(TimeInForce::FOK),
+            post_only: None,
+        };
+        let resp = ob.limit(l5);
+        let resp = resp.unwrap();
+        assert_eq!(resp.executed_qty, 5);
+        assert_eq!(resp.remaining_qty, 0);
+        assert_eq!(resp.taker_qty, 5);
+        assert_eq!(resp.status, OrderStatus::Filled);
+        assert!(resp.log.is_none());
+    }
 
-//         // Test FOK order
-//         let l5 = LimitOrderOptions {
-//             side: Side::Sell,
-//             quantity: 5,
-//             price: 1100,
-//             time_in_force: Some(TimeInForce::FOK),
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l5);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.executed_qty, 5);
-//         assert_eq!(resp.remaining_qty, 0);
-//         assert_eq!(resp.taker_qty, 5);
-//         assert_eq!(resp.status, OrderStatus::Filled);
-//         assert!(resp.log.is_none());
-//     }
+    #[test]
+    fn test_order_book_options() {
+        let mut ob = get_populated_order_book(
+            vec![(Side::Sell, 5, 1100)],
+            Some(OrderBookOptions { journaling: true }),
+        );
 
-//     #[test]
-//     fn test_order_book_options() {
-//         let mut ob = get_populated_order_book(
-//             vec![(Side::Sell, 5, 1100)],
-//             Some(OrderBookOptions { journaling: true }),
-//         );
+        let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
+        let resp = ob.market(l1);
+        let resp = resp.unwrap();
+        assert_eq!(resp.log.is_some(), true);
+        assert_eq!(resp.log.unwrap().op, JournalOp::Market);
 
-//         let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
-//         let resp = ob.market(l1);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.log.is_some(), true);
-//         assert_eq!(resp.log.unwrap().op, JournalOp::Market);
+        let l2 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 5,
+            price: 1000,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l2);
+        let resp = resp.unwrap();
+        assert_eq!(resp.log.is_some(), true);
+        assert_eq!(resp.log.unwrap().op, JournalOp::Limit);
 
-//         let l2 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 5,
-//             price: 1000,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l2);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.log.is_some(), true);
-//         assert_eq!(resp.log.unwrap().op, JournalOp::Limit);
+        let mut ob = get_populated_order_book(vec![(Side::Sell, 5, 1100)], None);
+        let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
+        let resp = ob.market(l1);
+        let resp = resp.unwrap();
+        assert_eq!(resp.log.is_none(), true);
 
-//         let mut ob = get_populated_order_book(vec![(Side::Sell, 5, 1100)], None);
-//         let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
-//         let resp = ob.market(l1);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.log.is_none(), true);
+        let l2 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 5,
+            price: 1000,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l2);
+        let resp = resp.unwrap();
+        assert_eq!(resp.log.is_none(), true);
+    }
 
-//         let l2 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 5,
-//             price: 1000,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l2);
-//         let resp = resp.unwrap();
-//         assert_eq!(resp.log.is_none(), true);
-//     }
+    #[test]
+    fn test_limit_order_errors() {
+        let mut ob = get_populated_order_book(
+            vec![
+                (Side::Buy, 5, 900),
+                (Side::Buy, 5, 950),
+                (Side::Buy, 5, 1000),
+                (Side::Sell, 5, 1100),
+                (Side::Sell, 5, 1150),
+                (Side::Sell, 5, 1200),
+            ],
+            None,
+        );
 
-//     #[test]
-//     fn test_limit_order_errors() {
-//         let mut ob = get_populated_order_book(
-//             vec![
-//                 (Side::Buy, 5, 900),
-//                 (Side::Buy, 5, 950),
-//                 (Side::Buy, 5, 1000),
-//                 (Side::Sell, 5, 1100),
-//                 (Side::Sell, 5, 1150),
-//                 (Side::Sell, 5, 1200),
-//             ],
-//             None,
-//         );
+        // invalid quantity
+        let l1 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 0,
+            price: 1000,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l1);
+        assert_eq!(
+            resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code),
+            true
+        );
 
-//         // invalid quantity
-//         let l1 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 0,
-//             price: 1000,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l1);
-//         assert_eq!(
-//             resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code),
-//             true
-//         );
+        // invalid price
+        let l2 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 2,
+            price: 0,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l2);
+        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPrice).code), true);
 
-//         // invalid price
-//         let l2 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 2,
-//             price: 0,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l2);
-//         assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPrice).code), true);
+        // FOK Buy
+        {
+            // Order Side volume lower than quantity
+            let mut opts = LimitOrderOptions {
+                side: Side::Buy,
+                quantity: 100,
+                price: 1500,
+                time_in_force: Some(TimeInForce::FOK),
+                post_only: None,
+            };
+            let resp = ob.limit(opts);
+            assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
 
-//         // FOK Buy
-//         {
-//             // Order Side volume lower than quantity
-//             let mut opts = LimitOrderOptions {
-//                 side: Side::Buy,
-//                 quantity: 100,
-//                 price: 1500,
-//                 time_in_force: Some(TimeInForce::FOK),
-//                 post_only: None,
-//             };
-//             let resp = ob.limit(opts);
-//             assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+            // One price level
+            opts.quantity = 6;
+            opts.price = 1100;
+            let resp = ob.limit(opts);
+            assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
 
-//             // One price level
-//             opts.quantity = 6;
-//             opts.price = 1100;
-//             let resp = ob.limit(opts);
-//             assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+            // Multiple price level
+            opts.quantity = 11;
+            opts.price = 1150;
+            let resp = ob.limit(opts);
+            assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        }
 
-//             // Multiple price level
-//             opts.quantity = 11;
-//             opts.price = 1150;
-//             let resp = ob.limit(opts);
-//             assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
-//         }
+        // FOK Sell
+        {
+            // Order Side volume lower than quantity
+            let mut opts = LimitOrderOptions {
+                side: Side::Sell,
+                quantity: 100,
+                price: 500,
+                time_in_force: Some(TimeInForce::FOK),
+                post_only: None,
+            };
+            let resp = ob.limit(opts);
+            assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
 
-//         // FOK Sell
-//         {
-//             // Order Side volume lower than quantity
-//             let mut opts = LimitOrderOptions {
-//                 side: Side::Sell,
-//                 quantity: 100,
-//                 price: 500,
-//                 time_in_force: Some(TimeInForce::FOK),
-//                 post_only: None,
-//             };
-//             let resp = ob.limit(opts);
-//             assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+            // One price level
+            opts.quantity = 6;
+            opts.price = 1000;
+            let resp = ob.limit(opts);
+            assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
 
-//             // One price level
-//             opts.quantity = 6;
-//             opts.price = 1000;
-//             let resp = ob.limit(opts);
-//             assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+            // Multiple price level
+            opts.quantity = 11;
+            opts.price = 950;
+            let resp = ob.limit(opts);
+            assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        }
 
-//             // Multiple price level
-//             opts.quantity = 11;
-//             opts.price = 950;
-//             let resp = ob.limit(opts);
-//             assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
-//         }
+        {
+            // POST Only
+            let l5 = LimitOrderOptions {
+                side: Side::Buy,
+                quantity: 6,
+                price: 1100,
+                time_in_force: None,
+                post_only: Some(true),
+            };
+            let resp = ob.limit(l5);
+            assert_eq!(
+                resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code),
+                true
+            );
 
-//         // POST Only
-//         let l5 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 6,
-//             price: 1100,
-//             time_in_force: None,
-//             post_only: Some(true),
-//         };
-//         let resp = ob.limit(l5);
-//         assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code), true);
-//     }
+            let l6 = LimitOrderOptions {
+                side: Side::Sell,
+                quantity: 6,
+                price: 1000,
+                time_in_force: None,
+                post_only: Some(true),
+            };
+            let resp = ob.limit(l6);
+            assert_eq!(
+                resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code),
+                true
+            );
 
-//     #[test]
-//     fn test_cancel_order() {
-//         let mut ob =
-//             get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
+            // Empty the order book and retry
+            let _ = ob.market(MarketOrderOptions { side: Side::Buy, quantity: 50 });
+            let l7 = LimitOrderOptions {
+                side: Side::Buy,
+                quantity: 6,
+                price: 1000,
+                time_in_force: None,
+                post_only: Some(true),
+            };
+            let resp = ob.limit(l7);
+            assert_eq!(resp.is_ok(), true);
 
-//         // on same price level
-//         let l1 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 5,
-//             price: 1000,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l1);
-//         let resp = resp.unwrap();
-//         let order_id = resp.order_id;
-//         assert_eq!(ob.orders.contains_key(&order_id), true);
-//         let _ = ob.cancel(order_id);
-//         assert_eq!(ob.orders.contains_key(&order_id), false);
+            let _ = ob.market(MarketOrderOptions { side: Side::Sell, quantity: 50 });
+            let l8 = LimitOrderOptions {
+                side: Side::Sell,
+                quantity: 6,
+                price: 1100,
+                time_in_force: None,
+                post_only: Some(true),
+            };
+            let resp = ob.limit(l8);
+            assert_eq!(resp.is_ok(), true);
+        }
+    }
 
-//         // on same price level
-//         let l2 = LimitOrderOptions {
-//             side: Side::Sell,
-//             quantity: 5,
-//             price: 1100,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l2);
-//         let resp = resp.unwrap();
-//         let order_id = resp.order_id;
-//         assert_eq!(ob.orders.contains_key(&order_id), true);
-//         let _ = ob.cancel(order_id);
-//         assert_eq!(ob.orders.contains_key(&order_id), false);
+    #[test]
+    fn test_cancel_order() {
+        let mut ob =
+            get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
 
-//         // on different price level
-//         let l3 = LimitOrderOptions {
-//             side: Side::Sell,
-//             quantity: 5,
-//             price: 1200,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l3);
-//         let resp = resp.unwrap();
-//         let order_id = resp.order_id;
-//         assert_eq!(ob.orders.contains_key(&order_id), true);
-//         let _ = ob.cancel(order_id);
-//         assert_eq!(ob.orders.contains_key(&order_id), false);
+        // on same price level
+        let l1 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 5,
+            price: 1000,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l1);
+        let resp = resp.unwrap();
+        let order_id = resp.order_id;
+        assert_eq!(ob.orders.contains_key(&order_id), true);
+        let _ = ob.cancel(order_id);
+        assert_eq!(ob.orders.contains_key(&order_id), false);
 
-//         // cancel an order that not exists
-//         assert_eq!(ob.orders.len(), 2);
-//         let resp = ob.cancel(make_uuid());
-//         assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
-//         assert_eq!(ob.orders.len(), 2);
+        // on same price level
+        let l2 = LimitOrderOptions {
+            side: Side::Sell,
+            quantity: 5,
+            price: 1100,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l2);
+        let resp = resp.unwrap();
+        let order_id = resp.order_id;
+        assert_eq!(ob.orders.contains_key(&order_id), true);
+        let _ = ob.cancel(order_id);
+        assert_eq!(ob.orders.contains_key(&order_id), false);
 
-//         {
-//             // test cancel order journaling
-//             let mut ob = get_populated_order_book(
-//                 vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)],
-//                 Some(OrderBookOptions { journaling: true }),
-//             );
+        // on different price level
+        let l3 = LimitOrderOptions {
+            side: Side::Sell,
+            quantity: 5,
+            price: 1200,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l3);
+        let resp = resp.unwrap();
+        let order_id = resp.order_id;
+        assert_eq!(ob.orders.contains_key(&order_id), true);
+        let _ = ob.cancel(order_id);
+        assert_eq!(ob.orders.contains_key(&order_id), false);
 
-//             // on same price level
-//             let l1 = LimitOrderOptions {
-//                 side: Side::Buy,
-//                 quantity: 5,
-//                 price: 1000,
-//                 time_in_force: None,
-//                 post_only: None,
-//             };
-//             let resp = ob.limit(l1);
-//             let resp = resp.unwrap();
-//             let order_id = resp.order_id;
-//             assert_eq!(ob.orders.contains_key(&order_id), true);
-//             let cancel_resp = ob.cancel(order_id);
-//             assert_eq!(ob.orders.contains_key(&order_id), false);
-//             assert_eq!(cancel_resp.unwrap().log.unwrap().op, JournalOp::Cancel);
-//         }
-//     }
+        // cancel an order that not exists
+        assert_eq!(ob.orders.len(), 2);
+        let resp = ob.cancel(999);
+        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
+        assert_eq!(ob.orders.len(), 2);
 
-//     #[test]
-//     fn test_modify_order() {
-//         let mut ob =
-//             get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
+        {
+            // test cancel order journaling
+            let mut ob = get_populated_order_book(
+                vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)],
+                Some(OrderBookOptions { journaling: true }),
+            );
 
-//         let l1 = LimitOrderOptions {
-//             side: Side::Buy,
-//             quantity: 5,
-//             price: 1000,
-//             time_in_force: None,
-//             post_only: None,
-//         };
-//         let resp = ob.limit(l1);
-//         let resp = resp.unwrap();
-//         let orig_order_id = resp.order_id;
-//         assert_eq!(ob.bids.volume, 10);
+            // on same price level
+            let l1 = LimitOrderOptions {
+                side: Side::Buy,
+                quantity: 5,
+                price: 1000,
+                time_in_force: None,
+                post_only: None,
+            };
+            let resp = ob.limit(l1);
+            let resp = resp.unwrap();
+            let order_id = resp.order_id;
+            assert_eq!(ob.orders.contains_key(&order_id), true);
+            let cancel_resp = ob.cancel(order_id);
+            assert_eq!(ob.orders.contains_key(&order_id), false);
+            assert_eq!(cancel_resp.unwrap().log.unwrap().op, JournalOp::Cancel);
+        }
+    }
 
-//         let initial_depth = ob.depth(Some(100));
+    #[test]
+    fn test_modify_order() {
+        let mut ob =
+            get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
 
-//         // Modify quantity
-//         let resp = ob.modify(orig_order_id, None, Some(8));
-//         let resp = resp.unwrap();
-//         let new_order_id = resp.order_id;
-//         assert_eq!(ob.bids.volume, 13);
-//         assert_eq!(ob.orders.contains_key(&new_order_id), true);
-//         assert_eq!(ob.orders.contains_key(&orig_order_id), false);
-//         let order = ob.orders.get(&new_order_id).unwrap();
-//         assert_eq!(order.orig_qty, 8);
-//         assert_eq!(order.price, l1.price);
+        let l1 = LimitOrderOptions {
+            side: Side::Buy,
+            quantity: 5,
+            price: 1000,
+            time_in_force: None,
+            post_only: None,
+        };
+        let resp = ob.limit(l1);
+        let resp = resp.unwrap();
+        let orig_order_id = resp.order_id;
 
-//         // Modify price
-//         let orig_order_id = new_order_id;
-//         let resp = ob.modify(orig_order_id, Some(900), None);
-//         let resp = resp.unwrap();
-//         let new_order_id = resp.order_id;
-//         assert_eq!(ob.bids.volume, 13);
-//         assert_eq!(ob.orders.contains_key(&new_order_id), true);
-//         assert_eq!(ob.orders.contains_key(&orig_order_id), false);
-//         let order = ob.orders.get(&new_order_id).unwrap();
-//         assert_eq!(order.orig_qty, 8);
-//         assert_eq!(order.price, 900);
+        let initial_depth = ob.depth(Some(100));
 
-//         // Modify price and quantity
-//         let orig_order_id = new_order_id;
-//         let resp = ob.modify(orig_order_id, Some(1000), Some(5));
-//         let resp = resp.unwrap();
-//         let new_order_id = resp.order_id;
-//         assert_eq!(ob.bids.volume, 10);
-//         assert_eq!(ob.orders.contains_key(&new_order_id), true);
-//         assert_eq!(ob.orders.contains_key(&orig_order_id), false);
-//         let order = ob.orders.get(&new_order_id).unwrap();
-//         assert_eq!(order.orig_qty, 5);
-//         assert_eq!(order.price, 1000);
+        // Modify quantity
+        let new_quantity = 8;
+        let resp = ob.modify(orig_order_id, None, Some(new_quantity));
+        let resp = resp.unwrap();
+        let new_order_id = resp.order_id;
+        assert_eq!(ob.orders.contains_key(&new_order_id), true);
+        assert_eq!(ob.orders.contains_key(&orig_order_id), false);
+        let order = ob.orders.get(&new_order_id).unwrap();
+        assert_eq!(order.orig_qty, new_quantity);
+        assert_eq!(order.price, l1.price);
 
-//         assert_eq!(initial_depth, ob.depth(Some(100)));
+        // Modify price
+        let orig_order_id = new_order_id;
+        let orig_quantity = new_quantity;
+        let new_price = 900;
+        let resp = ob.modify(orig_order_id, Some(new_price), None);
+        let resp = resp.unwrap();
+        let new_order_id = resp.order_id;
+        assert_eq!(ob.orders.contains_key(&new_order_id), true);
+        assert_eq!(ob.orders.contains_key(&orig_order_id), false);
+        let order = ob.orders.get(&new_order_id).unwrap();
+        assert_eq!(order.orig_qty, orig_quantity);
+        assert_eq!(order.price, new_price);
 
-//         // no price or quantity
-//         let resp = ob.modify(new_order_id, None, None);
-//         assert_eq!(
-//             resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPriceOrQuantity).code),
-//             true
-//         );
+        // Modify price and quantity
+        let orig_order_id = new_order_id;
+        let new_price = 1000;
+        let new_quantity = 5;
+        let resp = ob.modify(orig_order_id, Some(new_price), Some(new_quantity));
+        let resp = resp.unwrap();
+        let new_order_id = resp.order_id;
+        assert_eq!(ob.orders.contains_key(&new_order_id), true);
+        assert_eq!(ob.orders.contains_key(&orig_order_id), false);
+        let order = ob.orders.get(&new_order_id).unwrap();
+        assert_eq!(order.orig_qty, new_quantity);
+        assert_eq!(order.price, new_price);
 
-//         // order that not exists
-//         let resp = ob.modify(make_uuid(), Some(1000), Some(2));
-//         assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
-//     }
+        assert_eq!(initial_depth, ob.depth(Some(100)));
 
-//     #[test]
-//     fn test_order_book_display() {
-//         let ob = make_order_book(None);
+        // no price or quantity
+        let resp = ob.modify(new_order_id, None, None);
+        assert_eq!(
+            resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPriceOrQuantity).code),
+            true
+        );
 
-//         // Display empty orderbook
-//         let rendered = format!("{}", ob);
-//         let expected = format!("{}------------------------------------\n{}", ob.asks, ob.bids);
-//         assert_eq!(rendered, expected);
+        // order that not exists
+        let resp = ob.modify(999, Some(1000), Some(2));
+        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
+    }
 
-//         let ob = get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1001)], None);
-//         let rendered = format!("{}", ob);
-//         assert!(rendered.contains("1001 -> 5")); // buy
-//         assert!(rendered.contains("------------------------------------"));
-//         assert!(rendered.contains("1000 -> 5")); // sell
-//     }
-// }
+    #[test]
+    fn test_best_bid_ask_mid_spread() {
+        let mut ob = get_populated_order_book(
+            vec![
+                (Side::Buy, 5, 900),
+                (Side::Buy, 5, 950),
+                (Side::Buy, 5, 1000),
+                (Side::Sell, 5, 1100),
+                (Side::Sell, 5, 1150),
+                (Side::Sell, 5, 1200),
+            ],
+            None,
+        );
+
+        assert_eq!(ob.best_bid(), Some(1000));
+        assert_eq!(ob.best_ask(), Some(1100));
+        assert_eq!(ob.mid_price(), Some(1050));
+        assert_eq!(ob.spread(), Some(100));
+        // empty the order book
+        let _ = ob.market(MarketOrderOptions { side: Side::Buy, quantity: 20 });
+        let _ = ob.market(MarketOrderOptions { side: Side::Sell, quantity: 20 });
+
+        assert_eq!(ob.best_bid(), None);
+        assert_eq!(ob.best_ask(), None);
+        assert_eq!(ob.mid_price(), None);
+        assert_eq!(ob.spread(), None);
+    }
+
+    #[test]
+    fn test_order_book_display() {
+        let ob = make_order_book(None);
+
+        // Display empty orderbook
+        let rendered = format!("{}", ob);
+        let expected = format!("------------------------------------\n");
+        assert_eq!(rendered, expected);
+
+        let ob = get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1001)], None);
+        let rendered = format!("{}", ob);
+        assert!(rendered.contains("1001 -> 5")); // buy
+        assert!(rendered.contains("------------------------------------"));
+        assert!(rendered.contains("1000 -> 5")); // sell
+    }
+}
