@@ -129,7 +129,7 @@ impl OrderBook {
             order.remaining_qty,
             order.status,
             None,
-            None, // price is not applicable for market orders
+            None,
             false,
         );
 
@@ -373,10 +373,10 @@ impl OrderBook {
         orders
     }
 
-    pub fn get_order(&self, id: OrderId) -> Option<LimitOrder> {
+    pub fn get_order(&self, id: OrderId) -> Result<LimitOrder> {
         match self.orders.get(&id) {
-            Some(o) => Some(*o),
-            None => None,
+            Some(o) => Ok(*o),
+            None => Err(make_error(ErrorType::OrderNotFound)),
         }
     }
 
@@ -1185,6 +1185,47 @@ mod tests {
         // order that not exists
         let resp = ob.modify(999, Some(1000), Some(2));
         assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
+    }
+
+    #[test]
+    fn test_get_orders() {
+        let ob = get_populated_order_book(
+            vec![
+                (Side::Buy, 5, 999),
+                (Side::Buy, 3, 999),
+                (Side::Sell, 3, 1001),
+                (Side::Sell, 5, 1001),
+            ],
+            None,
+        );
+
+        {   // Test get_orders_at_price
+            // First try with level price that not exists
+            assert_eq!(ob.get_orders_at_price(1, Side::Buy).len(), 0);
+            assert_eq!(ob.get_orders_at_price(1000000, Side::Sell).len(), 0);
+
+            let sell_orders = ob.get_orders_at_price(999, Side::Buy);
+            assert_eq!(sell_orders.len(), 2);
+            assert_eq!(sell_orders[0].orig_qty, 5);
+            assert_eq!(sell_orders[1].orig_qty, 3);
+
+            let buy_orders = ob.get_orders_at_price(1001, Side::Sell);
+            assert_eq!(buy_orders.len(), 2);
+            assert_eq!(buy_orders[0].orig_qty, 3);
+            assert_eq!(buy_orders[1].orig_qty, 5);
+        }
+
+        {
+            // Test get_order by ID
+            // First try with ID that not exist
+            assert_eq!(ob.get_order(999).is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
+
+            let sell_order = ob.get_order(0);
+            assert_eq!(sell_order.unwrap().orig_qty, 5);
+            
+            let buy_order = ob.get_order(3);
+            assert_eq!(buy_order.unwrap().orig_qty, 5);
+        }
     }
 
     #[test]

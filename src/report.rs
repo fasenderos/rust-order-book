@@ -108,7 +108,7 @@ impl<T> ExecutionReport<T> {
             order_type,
             side,
             price: price.unwrap_or(0),
-            // market order are alway IOC
+            // market order are always IOC
             time_in_force: if order_type == OrderType::Market {
                 TimeInForce::IOC
             } else {
