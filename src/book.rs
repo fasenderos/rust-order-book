@@ -28,9 +28,26 @@ use crate::{
     order::{LimitOrder, LimitOrderOptions, MarketOrder, MarketOrderOptions},
     {OrderStatus, OrderType, Side, TimeInForce},
 };
-use crate::{ExecutionReport, FillReport, OrderBookOptions};
+use crate::{ExecutionReport, FillReport};
 type Pool = HashMap<OrderId, LimitOrder>;
 use std::collections::VecDeque;
+
+/// Configuration options for initializing a new [`OrderBook`].
+///
+/// # Fields
+/// - `journaling`: If `true`, the order book will return a journal log for each operations.
+///   Defaults to `false`.
+#[derive(Debug, Clone)]
+pub struct OrderBookOptions {
+    pub journaling: bool,
+}
+
+impl Default for OrderBookOptions {
+    fn default() -> Self {
+        Self { journaling: false }
+    }
+}
+
 
 #[derive(Debug, PartialEq)]
 pub struct Depth {

@@ -1,17 +1,15 @@
+mod book;
 mod builder;
 mod enums;
 mod error;
 mod journal;
-mod options;
 mod order;
-mod order_book;
 mod report;
 mod utils;
 
+pub use book::{OrderBook, OrderBookOptions};
 pub use builder::OrderBookBuilder;
 pub use enums::{OrderStatus, OrderType, Side, TimeInForce};
 pub use error::OrderBookError;
-pub use options::OrderBookOptions;
 pub use order::{LimitOrderOptions, MarketOrderOptions};
-pub use order_book::OrderBook;
 pub use report::{ExecutionReport, FillReport};
