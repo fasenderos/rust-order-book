@@ -8,6 +8,7 @@ pub type OrderId = u64;
 pub type Price = u64;
 pub type Quantity = u64;
 
+use serde::{Serialize, Deserialize};
 use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeInForce};
 
 /// Options for submitting a market order to the order book.
@@ -67,7 +68,7 @@ pub struct LimitOrderOptions {
     pub post_only: Option<bool>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct LimitOrder {
     pub id: OrderId,
     pub side: Side,
