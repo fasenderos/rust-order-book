@@ -205,14 +205,20 @@ impl OrderBook {
         order.maker_qty = order.remaining_qty;
 
         if order.remaining_qty > 0 {
-            order.status = OrderStatus::PartiallyFilled;
-            self.orders.insert(order.id, order);
-            if order.side == Side::Buy {
-                let _ =
-                    self.bids.entry(order.price).or_insert_with(VecDeque::new).push_back(order.id);
+            if order.time_in_force == TimeInForce::IOC {
+                // If IOC order was not matched completely so set as canceled 
+                // and don't insert the order in the order book
+                order.status = OrderStatus::Canceled
             } else {
-                let _ =
+                order.status = OrderStatus::PartiallyFilled;
+                self.orders.insert(order.id, order);
+                if order.side == Side::Buy {
+                    let _ =
+                    self.bids.entry(order.price).or_insert_with(VecDeque::new).push_back(order.id);
+                } else {
+                    let _ =
                     self.asks.entry(order.price).or_insert_with(VecDeque::new).push_back(order.id);
+                }
             }
         } else {
             order.status = OrderStatus::Filled;

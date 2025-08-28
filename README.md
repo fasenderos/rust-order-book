@@ -10,12 +10,12 @@ Ultra-fast Rust Order Book </br> for high-frequency trading (HFT) :rocket::rocke
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
-- [Conditional Orders](#conditional-orders)
+<!-- - [Conditional Orders](#conditional-orders)
 - [About Primary Functions](#about-primary-functions)
   - [Create Limit order `limit()`](#create-limit-order)
   - [Create Market order `market()`](#create-market-order)
   - [Modify an existing order `modifiy()`](#modify-an-existing-order)
-  - [Cancel order `cancel()`](#cancel-order)
+  - [Cancel order `cancel()`](#cancel-order) -->
 - [Development](#development)
   - [Testing](#testing)
   - [Coverage](#coverage)
@@ -44,6 +44,30 @@ Or add the following line to your `Cargo.toml`:
 ```
 [dependencies]
 rust-order-book = "0.0.1"
+```
+
+## Usage
+```rs
+use rust_order_book::{LimitOrderOptions, MarketOrderOptions, OrderBookBuilder, Side};
+
+let mut ob = OrderBookBuilder::new("BTCUSD").build();
+
+let _ = ob.limit(LimitOrderOptions {
+  side: Side::Buy,
+  quantity: 100,
+  price: 50,
+  time_in_force: None,
+  post_only: None,
+});
+
+let _ = ob.market(MarketOrderOptions {
+  side: Side::Sell,
+  quantity: 50,
+});
+
+let _ = ob.modify(1, 60, None);
+
+let _ = ob.cancel(1);
 ```
 
 ## Development
