@@ -203,7 +203,7 @@ impl OrderBook {
             if order.time_in_force == TimeInForce::IOC {
                 // If IOC order was not matched completely so set as canceled
                 // and don't insert the order in the order book
-                order.status = OrderStatus::Canceled
+                order.status = OrderStatus::Canceled;
             } else {
                 order.status = OrderStatus::PartiallyFilled;
                 self.orders.insert(order.id, order);

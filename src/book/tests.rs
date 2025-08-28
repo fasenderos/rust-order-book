@@ -164,6 +164,24 @@ fn test_limit_order() {
     assert_eq!(resp.taker_qty, 5);
     assert_eq!(resp.status, OrderStatus::Filled);
     assert!(resp.log.is_none());
+    println!("{}", ob);
+
+    // Test IOC order
+    let l6 = LimitOrderOptions {
+        side: Side::Sell,
+        quantity: 5,
+        price: 1100,
+        time_in_force: Some(TimeInForce::IOC),
+        post_only: None,
+    };
+    let resp = ob.limit(l6);
+    let resp = resp.unwrap();
+    println!("{:?}", resp);
+    assert_eq!(resp.executed_qty, 3);
+    assert_eq!(resp.remaining_qty, 2);
+    assert_eq!(resp.taker_qty, 3);
+    assert_eq!(resp.status, OrderStatus::Canceled);
+    assert!(resp.log.is_none());
 }
 
 #[test]
