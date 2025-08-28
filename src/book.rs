@@ -19,7 +19,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
-use crate::enums::JournalOp;
+use crate::enums::{JournalOp, OrderOptions};
 use crate::journal::Snapshot;
 use crate::order::{OrderId, Price, Quantity};
 use crate::utils::{current_timestamp_millis, safe_add, safe_sub};
@@ -40,15 +40,15 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone)]
 pub struct OrderBookOptions {
     pub journaling: bool,
-    pub snapshot: Option<Snapshot>
+    pub snapshot: Option<Snapshot>,
+    pub replay_logs: Option<Vec<JournalLog>>,
 }
 
 impl Default for OrderBookOptions {
     fn default() -> Self {
-        Self { journaling: false, snapshot: None }
+        Self { journaling: false, snapshot: None, replay_logs: None }
     }
 }
-
 
 #[derive(Debug, PartialEq)]
 pub struct Depth {
@@ -114,10 +114,7 @@ impl OrderBook {
     ///
     /// # Errors
     /// Returns `Err` if the input is invalid (e.g., size is zero).
-    pub fn market(
-        &mut self,
-        options: MarketOrderOptions,
-    ) -> Result<ExecutionReport<MarketOrderOptions>> {
+    pub fn market(&mut self, options: MarketOrderOptions) -> Result<ExecutionReport> {
         if let Err(err) = self.validate_market_order(&options) {
             return Err(err);
         }
@@ -157,7 +154,7 @@ impl OrderBook {
                 op_id: self.last_op,
                 ts: current_timestamp_millis(),
                 op: JournalOp::Market,
-                o: options,
+                o: OrderOptions::Market(options),
             })
         }
 
@@ -177,10 +174,7 @@ impl OrderBook {
     ///
     /// # Errors
     /// Returns `Err` if the input is invalid.
-    pub fn limit(
-        &mut self,
-        options: LimitOrderOptions,
-    ) -> Result<ExecutionReport<LimitOrderOptions>> {
+    pub fn limit(&mut self, options: LimitOrderOptions) -> Result<ExecutionReport> {
         if let Err(err) = self.validate_limit_order(&options) {
             return Err(err);
         }
@@ -207,18 +201,24 @@ impl OrderBook {
 
         if order.remaining_qty > 0 {
             if order.time_in_force == TimeInForce::IOC {
-                // If IOC order was not matched completely so set as canceled 
+                // If IOC order was not matched completely so set as canceled
                 // and don't insert the order in the order book
                 order.status = OrderStatus::Canceled
             } else {
                 order.status = OrderStatus::PartiallyFilled;
                 self.orders.insert(order.id, order);
                 if order.side == Side::Buy {
-                    let _ =
-                    self.bids.entry(order.price).or_insert_with(VecDeque::new).push_back(order.id);
+                    let _ = self
+                        .bids
+                        .entry(order.price)
+                        .or_insert_with(VecDeque::new)
+                        .push_back(order.id);
                 } else {
-                    let _ =
-                    self.asks.entry(order.price).or_insert_with(VecDeque::new).push_back(order.id);
+                    let _ = self
+                        .asks
+                        .entry(order.price)
+                        .or_insert_with(VecDeque::new)
+                        .push_back(order.id);
                 }
             }
         } else {
@@ -237,7 +237,7 @@ impl OrderBook {
                 op_id: self.last_op,
                 ts: current_timestamp_millis(),
                 op: JournalOp::Limit,
-                o: options,
+                o: OrderOptions::Limit(options),
             })
         }
 
@@ -254,7 +254,7 @@ impl OrderBook {
     ///
     /// # Errors
     /// Returns `Err` if the order is not found.
-    pub fn cancel(&mut self, id: OrderId) -> Result<ExecutionReport<OrderId>> {
+    pub fn cancel(&mut self, id: OrderId) -> Result<ExecutionReport> {
         let mut order = match self.orders.remove(&id) {
             Some(o) => o,
             None => return Err(make_error(ErrorType::OrderNotFound)),
@@ -299,7 +299,7 @@ impl OrderBook {
                 op_id: self.last_op,
                 ts: current_timestamp_millis(),
                 op: JournalOp::Cancel,
-                o: order.id,
+                o: OrderOptions::Cancel(order.id),
             })
         }
 
@@ -331,12 +331,20 @@ impl OrderBook {
         id: OrderId,
         price: Option<u64>,
         quantity: Option<u64>,
-    ) -> Result<ExecutionReport<LimitOrderOptions>> {
+    ) -> Result<ExecutionReport> {
+        let old_journaling = self.journaling;
+        // Temporary disable journaling
+        self.journaling = false;
         let order = match self.cancel(id) {
             Ok(o) => o,
-            Err(e) => return Err(e),
+            Err(e) => {
+                // Restore previous journaling value before returning
+                self.journaling = old_journaling;
+                return Err(e);
+            }
         };
-        match (price, quantity) {
+
+        let mut report = match (price, quantity) {
             (None, Some(quantity)) => self.limit(LimitOrderOptions {
                 side: order.side,
                 quantity,
@@ -358,8 +366,28 @@ impl OrderBook {
                 time_in_force: Some(order.time_in_force),
                 post_only: Some(order.post_only),
             }),
-            (None, None) => return Err(make_error(ErrorType::InvalidPriceOrQuantity)),
+            (None, None) => {
+                // Restore previous journaling value before returning
+                self.journaling = old_journaling;
+                return Err(make_error(ErrorType::InvalidPriceOrQuantity));
+            }
+        };
+
+        // Restore previous journaling value
+        self.journaling = old_journaling;
+
+        if let Some(r) = report.as_mut().ok() {
+            if self.journaling {
+                self.last_op = safe_add(self.last_op, 1);
+                r.log = Some(JournalLog {
+                    op_id: self.last_op,
+                    ts: current_timestamp_millis(),
+                    op: JournalOp::Modify,
+                    o: OrderOptions::Modify { id, price, quantity },
+                });
+            }
         }
+        report
     }
 
     /// Get all orders at a specific price level
@@ -439,8 +467,8 @@ impl OrderBook {
             asks: self.asks.clone(),
             last_op: self.last_op,
             next_order_id: self.next_order_id,
-            ts: current_timestamp_millis()
-        }
+            ts: current_timestamp_millis(),
+        };
     }
 
     /// Returns the current depth of the order book.
@@ -455,9 +483,9 @@ impl OrderBook {
     /// A [`Depth`] struct containing the order book snapshot.
     pub fn depth(&self, limit: Option<usize>) -> Depth {
         let levels = limit.unwrap_or(100);
-        Depth { 
+        Depth {
             asks: self.get_asks_prices_and_volume(levels),
-            bids: self.get_bids_prices_and_volume(levels)
+            bids: self.get_bids_prices_and_volume(levels),
         }
     }
 
@@ -686,13 +714,13 @@ impl OrderBook {
     }
 
     /// Restores the internal state of this [`OrderBook`] from a given [`Snapshot`].
-    /// 
-    /// This replaces any existing orders and it is typically used when reconstructing 
+    ///
+    /// This replaces any existing orders and it is typically used when reconstructing
     /// an order book from persistent storage.
-    /// 
+    ///
     /// # Parameters
     /// - `snapshot`: The snapshot to load into the order book.
-    /// 
+    ///
     /// # Examples
     /// ```
     /// let mut ob = OrderBook::new("BTCUSD", OrderBookOptions::default());
@@ -704,6 +732,48 @@ impl OrderBook {
         self.asks = snapshot.asks;
         self.last_op = snapshot.last_op;
         self.next_order_id = snapshot.next_order_id;
+    }
+
+    /// Replays a sequence of journal logs to reconstruct the order book state.
+    ///
+    /// Each log entry represents a previously executed operation, such as a market order,
+    /// limit order, cancel, or modify. This function applies each operation in order.
+    ///
+    /// # Parameters
+    ///
+    /// - `logs`: A vector of [`JournalLog`] entries to be applied. Logs must be in chronological
+    ///   order to correctly reconstruct the state.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if all operations are successfully applied.
+    /// Returns `Err(OrderBookError)` if any operation fails; the replay stops at the first error.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let mut book = OrderBook::new("BTCUSD", OrderBookOptions::default());
+    /// book.restore_snapshot(snapshot);
+    /// book.replay_logs(logs)?;
+    /// ```
+    pub fn replay_logs(&mut self, mut logs: Vec<JournalLog>) -> Result<()> {
+        // sort logs by op_id ascending
+        logs.sort_by_key(|log| log.op_id);
+
+        for log in &logs {
+            let res = match &log.o {
+                OrderOptions::Market(opts) => self.market(opts.clone()),
+                OrderOptions::Limit(opts) => self.limit(opts.clone()),
+                OrderOptions::Cancel(id) => self.cancel(*id),
+                OrderOptions::Modify { id, price, quantity } => self.modify(*id, *price, *quantity),
+            };
+
+            // propagate error immediately if any operation fails
+            if let Err(e) = res {
+                return Err(e);
+            }
+        }
+        Ok(())
     }
 
     fn new_order_id(&mut self) -> OrderId {

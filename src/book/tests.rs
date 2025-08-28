@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::{OrderBook, OrderBookBuilder};
 
@@ -30,7 +29,7 @@ fn test_market_order() {
             (Side::Sell, 3, 1001),
             (Side::Sell, 5, 1002),
         ],
-        Some(OrderBookOptions { journaling: true, snapshot: None }),
+        Some(OrderBookOptions { journaling: true, snapshot: None, replay_logs: None }),
     );
 
     let m1 = MarketOrderOptions { side: Side::Buy, quantity: 4 };
@@ -50,7 +49,7 @@ fn test_market_order() {
     assert_eq!(resp.maker_qty, 0);
     assert_eq!(resp.side, m1.side);
     assert_eq!(resp.status, OrderStatus::Filled);
-    assert_eq!(resp.log.unwrap().o, m1);
+    assert_eq!(resp.log.unwrap().o, OrderOptions::Market(m1));
     assert_eq!(resp.log.unwrap().op, JournalOp::Market);
 
     let resp = ob.market(m2);
@@ -64,7 +63,7 @@ fn test_market_order() {
     assert_eq!(resp.maker_qty, 0);
     assert_eq!(resp.side, m2.side);
     assert_eq!(resp.status, OrderStatus::Filled);
-    assert_eq!(resp.log.unwrap().o, m2);
+    assert_eq!(resp.log.unwrap().o, OrderOptions::Market(m2));
     assert_eq!(resp.log.unwrap().op, JournalOp::Market);
 
     let resp = ob.market(m3);
@@ -72,7 +71,7 @@ fn test_market_order() {
     assert_eq!(resp.executed_qty, 4);
     assert_eq!(resp.remaining_qty, 6);
     assert_eq!(resp.status, OrderStatus::PartiallyFilled);
-    assert_eq!(resp.log.unwrap().o, m3);
+    assert_eq!(resp.log.unwrap().o, OrderOptions::Market(m3));
     assert_eq!(resp.log.unwrap().op, JournalOp::Market);
 }
 
@@ -83,10 +82,7 @@ fn test_market_order_errors() {
     // invalid quantity
     let m1 = MarketOrderOptions { side: Side::Buy, quantity: 0 };
     let resp = ob.market(m1);
-    assert_eq!(
-        resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code),
-        true
-    );
+    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code), true);
 
     // side empty
     let m2 = MarketOrderOptions { side: Side::Buy, quantity: 10 };
@@ -174,7 +170,7 @@ fn test_limit_order() {
 fn test_order_book_options() {
     let mut ob = get_populated_order_book(
         vec![(Side::Sell, 5, 1100)],
-        Some(OrderBookOptions { journaling: true, snapshot: None }),
+        Some(OrderBookOptions { journaling: true, snapshot: None, replay_logs: None }),
     );
 
     let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
@@ -236,10 +232,7 @@ fn test_limit_order_errors() {
         post_only: None,
     };
     let resp = ob.limit(l1);
-    assert_eq!(
-        resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code),
-        true
-    );
+    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code), true);
 
     // invalid price
     let l2 = LimitOrderOptions {
@@ -314,10 +307,7 @@ fn test_limit_order_errors() {
             post_only: Some(true),
         };
         let resp = ob.limit(l5);
-        assert_eq!(
-            resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code),
-            true
-        );
+        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code), true);
 
         let l6 = LimitOrderOptions {
             side: Side::Sell,
@@ -327,10 +317,7 @@ fn test_limit_order_errors() {
             post_only: Some(true),
         };
         let resp = ob.limit(l6);
-        assert_eq!(
-            resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code),
-            true
-        );
+        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code), true);
 
         // Empty the order book and retry
         let _ = ob.market(MarketOrderOptions { side: Side::Buy, quantity: 50 });
@@ -359,8 +346,7 @@ fn test_limit_order_errors() {
 
 #[test]
 fn test_cancel_order() {
-    let mut ob =
-        get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
+    let mut ob = get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
 
     // on same price level
     let l1 = LimitOrderOptions {
@@ -417,7 +403,7 @@ fn test_cancel_order() {
         // test cancel order journaling
         let mut ob = get_populated_order_book(
             vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)],
-            Some(OrderBookOptions { journaling: true, snapshot: None }),
+            Some(OrderBookOptions { journaling: true, snapshot: None, replay_logs: None }),
         );
 
         // on same price level
@@ -440,8 +426,7 @@ fn test_cancel_order() {
 
 #[test]
 fn test_modify_order() {
-    let mut ob =
-        get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
+    let mut ob = get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1100)], None);
 
     let l1 = LimitOrderOptions {
         side: Side::Buy,
@@ -466,8 +451,10 @@ fn test_modify_order() {
     let order = ob.orders.get(&new_order_id).unwrap();
     assert_eq!(order.orig_qty, new_quantity);
     assert_eq!(order.price, l1.price);
+    assert_eq!(ob.journaling, false); // Journaling is initially disabled
 
-    // Modify price
+    // Modify price and enagle journaling
+    ob.journaling = true;
     let orig_order_id = new_order_id;
     let orig_quantity = new_quantity;
     let new_price = 900;
@@ -479,6 +466,7 @@ fn test_modify_order() {
     let order = ob.orders.get(&new_order_id).unwrap();
     assert_eq!(order.orig_qty, orig_quantity);
     assert_eq!(order.price, new_price);
+    assert_eq!(ob.journaling, true); // Journaling now is enabled
 
     // Modify price and quantity
     let orig_order_id = new_order_id;
@@ -492,6 +480,15 @@ fn test_modify_order() {
     let order = ob.orders.get(&new_order_id).unwrap();
     assert_eq!(order.orig_qty, new_quantity);
     assert_eq!(order.price, new_price);
+    assert_eq!(ob.journaling, true); // Journaling is still enabled
+    assert_eq!(
+        resp.log.unwrap().o,
+        OrderOptions::Modify {
+            id: orig_order_id,
+            price: Some(new_price),
+            quantity: Some(new_quantity)
+        }
+    );
 
     assert_eq!(initial_depth, ob.depth(Some(100)));
 
@@ -519,7 +516,8 @@ fn test_get_orders() {
         None,
     );
 
-    {   // Test get_orders_at_price
+    {
+        // Test get_orders_at_price
         // First try with level price that not exists
         assert_eq!(ob.get_orders_at_price(1, Side::Buy).len(), 0);
         assert_eq!(ob.get_orders_at_price(1000000, Side::Sell).len(), 0);
@@ -538,11 +536,14 @@ fn test_get_orders() {
     {
         // Test get_order by ID
         // First try with ID that not exist
-        assert_eq!(ob.get_order(999).is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
+        assert_eq!(
+            ob.get_order(999).is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code),
+            true
+        );
 
         let sell_order = ob.get_order(0);
         assert_eq!(sell_order.unwrap().orig_qty, 5);
-        
+
         let buy_order = ob.get_order(3);
         assert_eq!(buy_order.unwrap().orig_qty, 5);
     }
@@ -593,7 +594,7 @@ fn test_order_book_display() {
 }
 
 #[test]
-fn test_order_book_snapshot() {
+fn test_snapshot() {
     let ob = get_populated_order_book(
         vec![
             (Side::Sell, 5, 1200),
@@ -603,7 +604,7 @@ fn test_order_book_snapshot() {
             (Side::Buy, 5, 1000),
             (Side::Buy, 5, 900),
         ],
-        Some(OrderBookOptions { journaling: true, snapshot: None })
+        Some(OrderBookOptions { journaling: true, snapshot: None, replay_logs: None }),
     );
 
     let snap = ob.snapshot();
@@ -616,7 +617,7 @@ fn test_order_book_snapshot() {
 }
 
 #[test]
-fn test_order_book_snapshot_restore() {
+fn test_snapshot_restore() {
     let ob = get_populated_order_book(
         vec![
             (Side::Sell, 5, 1200),
@@ -626,7 +627,7 @@ fn test_order_book_snapshot_restore() {
             (Side::Buy, 5, 1000),
             (Side::Buy, 5, 900),
         ],
-        Some(OrderBookOptions { journaling: true, snapshot: None })
+        Some(OrderBookOptions { journaling: true, snapshot: None, replay_logs: None }),
     );
     let mut snap = ob.snapshot();
     // remove timestamp to avoid error for different millis
@@ -640,8 +641,94 @@ fn test_order_book_snapshot_restore() {
     // restore
     let mut restored = OrderBook::new("BTCUSD", OrderBookOptions::default());
     restored.restore_snapshot(decoded);
-    
+
     let mut restored_snapshot = restored.snapshot();
     restored_snapshot.ts = 0;
     assert_eq!(restored_snapshot, snap);
+}
+
+#[test]
+fn test_replay_logs() {
+    let mut ob = OrderBook::new("BTCUSD", OrderBookOptions::default());
+
+    // Step 1: prepare initial orders
+    let limit_log_1 = JournalLog {
+        op_id: 1,
+        ts: 2_000,
+        op: JournalOp::Limit,
+        o: OrderOptions::Limit(LimitOrderOptions {
+            quantity: 20,
+            price: 1000,
+            side: Side::Sell,
+            time_in_force: None,
+            post_only: None,
+        }),
+    };
+
+    let limit_log_2 = JournalLog {
+        op_id: 2,
+        ts: 2_000,
+        op: JournalOp::Limit,
+        o: OrderOptions::Limit(LimitOrderOptions {
+            quantity: 20,
+            price: 900,
+            side: Side::Buy,
+            time_in_force: None,
+            post_only: None,
+        }),
+    };
+
+    let market_log = JournalLog {
+        op_id: 3,
+        ts: 1_000,
+        op: JournalOp::Market,
+        o: OrderOptions::Market(MarketOrderOptions { quantity: 10, side: Side::Buy }),
+    };
+
+    // Step 2: modify the first order
+    let modify_log = JournalLog {
+        op_id: 4,
+        ts: 3_000,
+        op: JournalOp::Modify,
+        o: OrderOptions::Modify { id: 0, price: Some(1100), quantity: Some(7) },
+    };
+
+    // Step 3: cancel the second order
+    let cancel_log =
+        JournalLog { op_id: 5, ts: 4_000, op: JournalOp::Cancel, o: OrderOptions::Cancel(1) };
+
+    // Step 4: logs are intentionally out of order to test sorting
+    let logs = vec![
+        cancel_log.clone(),
+        modify_log.clone(),
+        limit_log_1.clone(),
+        market_log.clone(),
+        limit_log_2.clone(),
+    ];
+
+    // Step 5: replay logs and assert no errors
+    let result = ob.replay_logs(logs);
+    assert!(result.is_ok()); // Replay should succeed with correct log
+
+    // Step 6: verify first order modified
+    // Note the first order become with id 3 because the modify is actually a cancel e create new one with new id
+    let first_order = ob.orders.get(&3).unwrap();
+    assert_eq!(first_order.price, 1100);
+    assert_eq!(first_order.orig_qty, 7);
+
+    // Step 7: verify second order was cancelled
+
+    // Limit order was cancelled
+    assert!(!ob.orders.contains_key(&1));
+
+    // Step 7: test error branch (modify non-existing order)
+    let bad_modify_log = JournalLog {
+        op_id: 5,
+        ts: 5_000,
+        op: JournalOp::Modify,
+        o: OrderOptions::Modify { id: 999, price: Some(500), quantity: Some(1) },
+    };
+
+    let result_err = ob.replay_logs(vec![bad_modify_log]);
+    assert!(result_err.is_err());
 }

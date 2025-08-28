@@ -4,9 +4,12 @@
 //! (such as order submissions, cancellations, modifications)
 //! for replay, audit, or recovery purposes.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use crate::{
+    enums::{JournalOp, OrderOptions},
+    order::{LimitOrder, OrderId},
+};
 use serde::{Deserialize, Serialize};
-use crate::{enums::JournalOp, order::{LimitOrder, OrderId}};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 /// Represents a journal entry for an operation performed on the order book.
 ///
@@ -22,11 +25,11 @@ use crate::{enums::JournalOp, order::{LimitOrder, OrderId}};
 /// - `op`: The type of operation performed (e.g., market, limit, cancel).
 /// - `o`: The payload or input associated with the operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct JournalLog<T> {
+pub struct JournalLog {
     pub op_id: u64,
     pub ts: i64,
     pub op: JournalOp,
-    pub o: T,
+    pub o: OrderOptions,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

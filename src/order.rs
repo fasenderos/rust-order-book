@@ -8,8 +8,8 @@ pub type OrderId = u64;
 pub type Price = u64;
 pub type Quantity = u64;
 
-use serde::{Serialize, Deserialize};
 use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeInForce};
+use serde::{Deserialize, Serialize};
 
 /// Options for submitting a market order to the order book.
 ///
@@ -19,7 +19,7 @@ use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeI
 /// # Fields
 /// - `side`: Buy or Sell
 /// - `quantity`: The total amount to trade
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarketOrderOptions {
     pub side: Side,
     pub quantity: u64,
@@ -59,7 +59,7 @@ impl MarketOrder {
 /// - `price`: Limit price
 /// - `time_in_force`: Optional TIF setting (default: GTC)
 /// - `post_only`: Optional post-only flag (default: false)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrderOptions {
     pub side: Side,
     pub quantity: u64,

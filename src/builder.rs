@@ -11,7 +11,10 @@
 //!     .with_journaling(true)
 //!     .build();
 //! ```
-use crate::{journal::Snapshot, OrderBook, OrderBookOptions};
+use crate::{
+    journal::{JournalLog, Snapshot},
+    OrderBook, OrderBookOptions,
+};
 
 /// A builder for constructing an [`OrderBook`] with custom options.
 ///
@@ -42,15 +45,42 @@ impl OrderBookBuilder {
     /// Attaches a snapshot to this builder, so that the constructed [`OrderBook`]
     /// will be restored to the state captured in the snapshot rather than starting
     /// empty.
-    /// 
+    ///
     /// # Parameters
     /// - `snapshot`: A previously captured [`Snapshot`] representing the full state
     ///   of an order book at a given point in time.
-    /// 
+    ///
     /// # Returns
     /// The builder itself, allowing method chaining.
     pub fn with_snapshot(mut self, snapshot: Snapshot) -> Self {
         self.options.snapshot = Some(snapshot);
+        self
+    }
+
+    /// Sets a sequence of journal logs to be replayed after snapshot restoration.
+    ///
+    /// This allows the order book to reconstruct its state by first restoring a snapshot
+    /// (if provided) and then applying all operations contained in the logs.
+    ///
+    /// # Parameters
+    ///
+    /// - `logs`: A vector of [`JournalLog`] entries to replay. Logs should ideally be in
+    ///   chronological order (`op_id` ascending), but `replay_logs` will sort them internally.
+    ///
+    /// # Returns
+    ///
+    /// Returns `self` to allow chaining with other builder methods.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let builder = OrderBookBuilder::new("BTCUSD")
+    ///     .with_snapshot(snapshot)
+    ///     .with_replay_logs(logs)
+    ///     .build();
+    /// ```
+    pub fn with_replay_logs(mut self, logs: Vec<JournalLog>) -> Self {
+        self.options.replay_logs = Some(logs);
         self
     }
 
@@ -69,9 +99,14 @@ impl OrderBookBuilder {
     /// An [`OrderBook`] with the configured options.
     pub fn build(self) -> OrderBook {
         let mut ob = OrderBook::new(self.symbol.as_str(), self.options.clone());
-        if let Some(snapshot) = self.options.snapshot {
-            ob.restore_snapshot(snapshot);
+        if let Some(snapshot) = &self.options.snapshot {
+            ob.restore_snapshot(snapshot.clone());
         }
+
+        if let Some(logs) = self.options.replay_logs {
+            ob.replay_logs(logs).unwrap(); // panic if logs are invalid
+        }
+
         ob
     }
 }
@@ -80,7 +115,11 @@ impl OrderBookBuilder {
 mod tests {
     use std::collections::{BTreeMap, HashMap};
 
-    use crate::{utils::current_timestamp_millis};
+    use crate::{
+        enums::{JournalOp, OrderOptions},
+        utils::current_timestamp_millis,
+        LimitOrderOptions, MarketOrderOptions, Side,
+    };
 
     use super::*;
 
@@ -118,15 +157,60 @@ mod tests {
             asks: BTreeMap::new(),
             last_op: 42,
             next_order_id: 100,
-            ts: current_timestamp_millis()
+            ts: current_timestamp_millis(),
         };
 
-        let book = OrderBookBuilder::new("BTCUSD")
-            .with_snapshot(snap)
-            .build();
+        let book = OrderBookBuilder::new("BTCUSD").with_snapshot(snap).build();
 
         assert_eq!(book.last_op, 42);
         assert_eq!(book.next_order_id, 100);
         assert_eq!(book.orders.len(), 0);
+    }
+
+    #[test]
+    fn test_builder_with_replay_logs() {
+        // Create a vector of fake journal logs to replay
+        let logs = vec![
+            JournalLog {
+                op_id: 1,
+                ts: 123457,
+                op: JournalOp::Limit,
+                o: OrderOptions::Limit(LimitOrderOptions {
+                    quantity: 10,
+                    price: 1100,
+                    side: Side::Sell,
+                    post_only: None,
+                    time_in_force: None,
+                }),
+            },
+            JournalLog {
+                op_id: 2,
+                ts: 123457,
+                op: JournalOp::Limit,
+                o: OrderOptions::Limit(LimitOrderOptions {
+                    quantity: 10,
+                    price: 1000,
+                    side: Side::Buy,
+                    post_only: None,
+                    time_in_force: None,
+                }),
+            },
+            JournalLog {
+                op_id: 3,
+                ts: 123456,
+                op: JournalOp::Market,
+                o: OrderOptions::Market(MarketOrderOptions { quantity: 5, side: Side::Buy }),
+            },
+        ];
+
+        // Build the order book using the builder with replay logs
+        let ob = OrderBookBuilder::new("BTCUSD").with_replay_logs(logs.clone()).build();
+
+        // Check that the total number of orders matches the logs applied
+        assert_eq!(ob.orders.len(), 2);
+
+        // Verify that the orders match the original logs
+        assert_eq!(ob.get_order(0).unwrap().remaining_qty, 5);
+        assert_eq!(ob.get_order(1).unwrap().remaining_qty, 10);
     }
 }

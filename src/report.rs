@@ -56,7 +56,7 @@ pub struct FillReport {
 /// - `fills`: Vector of individual fills
 /// - `log`: Optional journal log (if journaling is enabled)
 #[derive(Debug)]
-pub struct ExecutionReport<OrderOptions> {
+pub struct ExecutionReport {
     pub order_id: OrderId,
     pub orig_qty: u64,
     pub executed_qty: u64,
@@ -70,10 +70,10 @@ pub struct ExecutionReport<OrderOptions> {
     pub time_in_force: TimeInForce,
     pub post_only: bool,
     pub fills: Vec<FillReport>,
-    pub log: Option<JournalLog<OrderOptions>>,
+    pub log: Option<JournalLog>,
 }
 
-impl<T> ExecutionReport<T> {
+impl ExecutionReport {
     /// Creates a new execution report for a submitted order.
     ///
     /// Usually called internally by the order book engine.
@@ -96,7 +96,7 @@ impl<T> ExecutionReport<T> {
         time_in_force: Option<TimeInForce>,
         price: Option<u64>,
         post_only: bool,
-    ) -> ExecutionReport<T> {
+    ) -> ExecutionReport {
         ExecutionReport {
             order_id: id,
             orig_qty: quantity,
