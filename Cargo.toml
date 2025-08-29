@@ -22,7 +22,7 @@ readme = "README.md"
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 limitbook = "0.1.0"
 lobster = "0.7.0"
 orderbook-rs = "0.2.0"
