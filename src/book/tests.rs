@@ -2,9 +2,7 @@ use super::*;
 use crate::{OrderBook, OrderBookBuilder};
 
 fn make_order_book(options: Option<OrderBookOptions>) -> OrderBook {
-    OrderBookBuilder::new("BTC-USD")
-        .with_options(options.unwrap_or(OrderBookOptions::default()))
-        .build()
+    OrderBookBuilder::new("BTC-USD").with_options(options.unwrap_or_default()).build()
 }
 
 fn get_populated_order_book(
@@ -82,12 +80,12 @@ fn test_market_order_errors() {
     // invalid quantity
     let m1 = MarketOrderOptions { side: Side::Buy, quantity: 0 };
     let resp = ob.market(m1);
-    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code), true);
+    assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code));
 
     // side empty
     let m2 = MarketOrderOptions { side: Side::Buy, quantity: 10 };
     let resp = ob.market(m2);
-    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderBookEmpty).code), true);
+    assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderBookEmpty).code));
 }
 
 #[test]
@@ -194,7 +192,7 @@ fn test_order_book_options() {
     let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
     let resp = ob.market(l1);
     let resp = resp.unwrap();
-    assert_eq!(resp.log.is_some(), true);
+    assert!(resp.log.is_some());
     assert_eq!(resp.log.unwrap().op, JournalOp::Market);
 
     let l2 = LimitOrderOptions {
@@ -206,14 +204,14 @@ fn test_order_book_options() {
     };
     let resp = ob.limit(l2);
     let resp = resp.unwrap();
-    assert_eq!(resp.log.is_some(), true);
+    assert!(resp.log.is_some());
     assert_eq!(resp.log.unwrap().op, JournalOp::Limit);
 
     let mut ob = get_populated_order_book(vec![(Side::Sell, 5, 1100)], None);
     let l1 = MarketOrderOptions { side: Side::Buy, quantity: 5 };
     let resp = ob.market(l1);
     let resp = resp.unwrap();
-    assert_eq!(resp.log.is_none(), true);
+    assert!(resp.log.is_none());
 
     let l2 = LimitOrderOptions {
         side: Side::Buy,
@@ -224,7 +222,7 @@ fn test_order_book_options() {
     };
     let resp = ob.limit(l2);
     let resp = resp.unwrap();
-    assert_eq!(resp.log.is_none(), true);
+    assert!(resp.log.is_none());
 }
 
 #[test]
@@ -250,7 +248,7 @@ fn test_limit_order_errors() {
         post_only: None,
     };
     let resp = ob.limit(l1);
-    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code), true);
+    assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidQuantity).code));
 
     // invalid price
     let l2 = LimitOrderOptions {
@@ -261,7 +259,7 @@ fn test_limit_order_errors() {
         post_only: None,
     };
     let resp = ob.limit(l2);
-    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPrice).code), true);
+    assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPrice).code));
 
     // FOK Buy
     {
@@ -274,19 +272,19 @@ fn test_limit_order_errors() {
             post_only: None,
         };
         let resp = ob.limit(opts);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code));
 
         // One price level
         opts.quantity = 6;
         opts.price = 1100;
         let resp = ob.limit(opts);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code));
 
         // Multiple price level
         opts.quantity = 11;
         opts.price = 1150;
         let resp = ob.limit(opts);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code));
     }
 
     // FOK Sell
@@ -300,19 +298,19 @@ fn test_limit_order_errors() {
             post_only: None,
         };
         let resp = ob.limit(opts);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code));
 
         // One price level
         opts.quantity = 6;
         opts.price = 1000;
         let resp = ob.limit(opts);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code));
 
         // Multiple price level
         opts.quantity = 11;
         opts.price = 950;
         let resp = ob.limit(opts);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderFOK).code));
     }
 
     {
@@ -325,7 +323,7 @@ fn test_limit_order_errors() {
             post_only: Some(true),
         };
         let resp = ob.limit(l5);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code));
 
         let l6 = LimitOrderOptions {
             side: Side::Sell,
@@ -335,7 +333,7 @@ fn test_limit_order_errors() {
             post_only: Some(true),
         };
         let resp = ob.limit(l6);
-        assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code), true);
+        assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderPostOnly).code));
 
         // Empty the order book and retry
         let _ = ob.market(MarketOrderOptions { side: Side::Buy, quantity: 50 });
@@ -347,7 +345,7 @@ fn test_limit_order_errors() {
             post_only: Some(true),
         };
         let resp = ob.limit(l7);
-        assert_eq!(resp.is_ok(), true);
+        assert!(resp.is_ok());
 
         let _ = ob.market(MarketOrderOptions { side: Side::Sell, quantity: 50 });
         let l8 = LimitOrderOptions {
@@ -358,7 +356,7 @@ fn test_limit_order_errors() {
             post_only: Some(true),
         };
         let resp = ob.limit(l8);
-        assert_eq!(resp.is_ok(), true);
+        assert!(resp.is_ok());
     }
 }
 
@@ -377,9 +375,9 @@ fn test_cancel_order() {
     let resp = ob.limit(l1);
     let resp = resp.unwrap();
     let order_id = resp.order_id;
-    assert_eq!(ob.orders.contains_key(&order_id), true);
+    assert!(ob.orders.contains_key(&order_id));
     let _ = ob.cancel(order_id);
-    assert_eq!(ob.orders.contains_key(&order_id), false);
+    assert!(!ob.orders.contains_key(&order_id));
 
     // on same price level
     let l2 = LimitOrderOptions {
@@ -392,9 +390,9 @@ fn test_cancel_order() {
     let resp = ob.limit(l2);
     let resp = resp.unwrap();
     let order_id = resp.order_id;
-    assert_eq!(ob.orders.contains_key(&order_id), true);
+    assert!(ob.orders.contains_key(&order_id));
     let _ = ob.cancel(order_id);
-    assert_eq!(ob.orders.contains_key(&order_id), false);
+    assert!(!ob.orders.contains_key(&order_id));
 
     // on different price level
     let l3 = LimitOrderOptions {
@@ -407,14 +405,14 @@ fn test_cancel_order() {
     let resp = ob.limit(l3);
     let resp = resp.unwrap();
     let order_id = resp.order_id;
-    assert_eq!(ob.orders.contains_key(&order_id), true);
+    assert!(ob.orders.contains_key(&order_id));
     let _ = ob.cancel(order_id);
-    assert_eq!(ob.orders.contains_key(&order_id), false);
+    assert!(!ob.orders.contains_key(&order_id));
 
     // cancel an order that not exists
     assert_eq!(ob.orders.len(), 2);
     let resp = ob.cancel(999);
-    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
+    assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code));
     assert_eq!(ob.orders.len(), 2);
 
     {
@@ -435,9 +433,9 @@ fn test_cancel_order() {
         let resp = ob.limit(l1);
         let resp = resp.unwrap();
         let order_id = resp.order_id;
-        assert_eq!(ob.orders.contains_key(&order_id), true);
+        assert!(ob.orders.contains_key(&order_id));
         let cancel_resp = ob.cancel(order_id);
-        assert_eq!(ob.orders.contains_key(&order_id), false);
+        assert!(!ob.orders.contains_key(&order_id));
         assert_eq!(cancel_resp.unwrap().log.unwrap().op, JournalOp::Cancel);
     }
 }
@@ -464,12 +462,12 @@ fn test_modify_order() {
     let resp = ob.modify(orig_order_id, None, Some(new_quantity));
     let resp = resp.unwrap();
     let new_order_id = resp.order_id;
-    assert_eq!(ob.orders.contains_key(&new_order_id), true);
-    assert_eq!(ob.orders.contains_key(&orig_order_id), false);
+    assert!(ob.orders.contains_key(&new_order_id));
+    assert!(!ob.orders.contains_key(&orig_order_id));
     let order = ob.orders.get(&new_order_id).unwrap();
     assert_eq!(order.orig_qty, new_quantity);
     assert_eq!(order.price, l1.price);
-    assert_eq!(ob.journaling, false); // Journaling is initially disabled
+    assert!(!ob.journaling); // Journaling is initially disabled
 
     // Modify price and enagle journaling
     ob.journaling = true;
@@ -479,12 +477,12 @@ fn test_modify_order() {
     let resp = ob.modify(orig_order_id, Some(new_price), None);
     let resp = resp.unwrap();
     let new_order_id = resp.order_id;
-    assert_eq!(ob.orders.contains_key(&new_order_id), true);
-    assert_eq!(ob.orders.contains_key(&orig_order_id), false);
+    assert!(ob.orders.contains_key(&new_order_id));
+    assert!(!ob.orders.contains_key(&orig_order_id));
     let order = ob.orders.get(&new_order_id).unwrap();
     assert_eq!(order.orig_qty, orig_quantity);
     assert_eq!(order.price, new_price);
-    assert_eq!(ob.journaling, true); // Journaling now is enabled
+    assert!(ob.journaling); // Journaling now is enabled
 
     // Modify price and quantity
     let orig_order_id = new_order_id;
@@ -493,12 +491,12 @@ fn test_modify_order() {
     let resp = ob.modify(orig_order_id, Some(new_price), Some(new_quantity));
     let resp = resp.unwrap();
     let new_order_id = resp.order_id;
-    assert_eq!(ob.orders.contains_key(&new_order_id), true);
-    assert_eq!(ob.orders.contains_key(&orig_order_id), false);
+    assert!(ob.orders.contains_key(&new_order_id));
+    assert!(!ob.orders.contains_key(&orig_order_id));
     let order = ob.orders.get(&new_order_id).unwrap();
     assert_eq!(order.orig_qty, new_quantity);
     assert_eq!(order.price, new_price);
-    assert_eq!(ob.journaling, true); // Journaling is still enabled
+    assert!(ob.journaling); // Journaling is still enabled
     assert_eq!(
         resp.log.unwrap().o,
         OrderOptions::Modify {
@@ -512,14 +510,11 @@ fn test_modify_order() {
 
     // no price or quantity
     let resp = ob.modify(new_order_id, None, None);
-    assert_eq!(
-        resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPriceOrQuantity).code),
-        true
-    );
+    assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::InvalidPriceOrQuantity).code));
 
     // order that not exists
     let resp = ob.modify(999, Some(1000), Some(2));
-    assert_eq!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code), true);
+    assert!(resp.is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code));
 }
 
 #[test]
@@ -554,10 +549,9 @@ fn test_get_orders() {
     {
         // Test get_order by ID
         // First try with ID that not exist
-        assert_eq!(
-            ob.get_order(999).is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code),
-            true
-        );
+        assert!(ob
+            .get_order(999)
+            .is_err_and(|e| e.code == make_error(ErrorType::OrderNotFound).code),);
 
         let sell_order = ob.get_order(0);
         assert_eq!(sell_order.unwrap().orig_qty, 5);
@@ -601,7 +595,7 @@ fn test_order_book_display() {
 
     // Display empty orderbook
     let rendered = format!("{}", ob);
-    let expected = format!("------------------------------------\n");
+    let expected = "------------------------------------\n".to_string();
     assert_eq!(rendered, expected);
 
     let ob = get_populated_order_book(vec![(Side::Buy, 5, 1000), (Side::Sell, 5, 1001)], None);
@@ -716,13 +710,7 @@ fn test_replay_logs() {
         JournalLog { op_id: 5, ts: 4_000, op: JournalOp::Cancel, o: OrderOptions::Cancel(1) };
 
     // Step 4: logs are intentionally out of order to test sorting
-    let logs = vec![
-        cancel_log.clone(),
-        modify_log.clone(),
-        limit_log_1.clone(),
-        market_log.clone(),
-        limit_log_2.clone(),
-    ];
+    let logs = vec![cancel_log, modify_log, limit_log_1, market_log, limit_log_2];
 
     // Step 5: replay logs and assert no errors
     let result = ob.replay_logs(logs);

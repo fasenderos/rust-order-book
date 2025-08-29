@@ -116,7 +116,7 @@ mod tests {
     fn test_builder_with_defaults() {
         let ob = OrderBookBuilder::new("BTCUSD").build();
         assert_eq!(ob.symbol(), "BTCUSD");
-        assert_eq!(ob.journaling, false);
+        assert!(!ob.journaling);
     }
 
     #[test]

@@ -7,7 +7,7 @@
 //! including how much was executed, any remaining quantity, and the resulting trades.
 use crate::{
     journal::JournalLog,
-    order::{get_order_time_in_force, OrderId},
+    order::{get_order_time_in_force, OrderId, Price, Quantity},
     OrderStatus, OrderType, Side, TimeInForce,
 };
 
@@ -27,6 +27,18 @@ pub struct FillReport {
     pub price: u64,
     pub quantity: u64,
     pub status: OrderStatus,
+}
+
+#[derive(Debug)]
+pub struct ExecutionReportParams {
+    pub id: OrderId,
+    pub order_type: OrderType,
+    pub side: Side,
+    pub quantity: Quantity,
+    pub status: OrderStatus,
+    pub time_in_force: Option<TimeInForce>,
+    pub price: Option<Price>,
+    pub post_only: bool,
 }
 
 /// A comprehensive report describing the result of a submitted order.
@@ -81,34 +93,25 @@ impl ExecutionReport {
     /// - `time_in_force`: Optional TIF value (e.g., GTC, IOC)
     /// - `price`: Optional limit price (or placeholder for market orders)
     /// - `post_only`: Whether the order was post-only
-    pub fn new(
-        id: OrderId,
-        order_type: OrderType,
-        side: Side,
-        quantity: u64,
-        status: OrderStatus,
-        time_in_force: Option<TimeInForce>,
-        price: Option<u64>,
-        post_only: bool,
-    ) -> ExecutionReport {
-        ExecutionReport {
-            order_id: id,
-            orig_qty: quantity,
+    pub fn new(params: ExecutionReportParams) -> Self {
+        Self {
+            order_id: params.id,
+            orig_qty: params.quantity,
             executed_qty: 0,
-            remaining_qty: quantity,
-            status,
+            remaining_qty: params.quantity,
+            status: params.status,
             taker_qty: 0,
             maker_qty: 0,
-            order_type,
-            side,
-            price: price.unwrap_or(0),
+            order_type: params.order_type,
+            side: params.side,
+            price: params.price.unwrap_or(0),
             // market order are always IOC
-            time_in_force: if order_type == OrderType::Market {
+            time_in_force: if params.order_type == OrderType::Market {
                 TimeInForce::IOC
             } else {
-                get_order_time_in_force(time_in_force)
+                get_order_time_in_force(params.time_in_force)
             },
-            post_only,
+            post_only: params.post_only,
             fills: Vec::new(),
             log: None,
         }

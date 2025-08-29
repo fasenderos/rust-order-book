@@ -22,6 +22,7 @@ use std::fmt;
 use crate::enums::{JournalOp, OrderOptions};
 use crate::journal::Snapshot;
 use crate::order::{OrderId, Price, Quantity};
+use crate::report::ExecutionReportParams;
 use crate::utils::{current_timestamp_millis, safe_add, safe_sub};
 use crate::{
     error::{make_error, ErrorType, Result},
@@ -41,17 +42,11 @@ use std::collections::VecDeque;
 ///   of an order book at a given point in time.
 /// - `replay_logs`: A vector of [`JournalLog`] entries to replay. Logs should ideally be in
 ///   chronological order (`op_id` ascending), but `replay_logs` will sort them internally.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct OrderBookOptions {
     pub journaling: bool,
     pub snapshot: Option<Snapshot>,
     pub replay_logs: Option<Vec<JournalLog>>,
-}
-
-impl Default for OrderBookOptions {
-    fn default() -> Self {
-        Self { journaling: false, snapshot: None, replay_logs: None }
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -120,21 +115,19 @@ impl OrderBook {
     /// # Errors
     /// Returns `Err` if the input is invalid (e.g., size is zero).
     pub fn market(&mut self, options: MarketOrderOptions) -> Result<ExecutionReport> {
-        if let Err(err) = self.validate_market_order(&options) {
-            return Err(err);
-        }
+        self.validate_market_order(&options)?;
 
-        let mut order = MarketOrder::new(self.new_order_id(), options.clone());
-        let mut report = ExecutionReport::new(
-            order.id,
-            OrderType::Market,
-            order.side,
-            order.remaining_qty,
-            order.status,
-            None,
-            None,
-            false,
-        );
+        let mut order = MarketOrder::new(self.new_order_id(), options);
+        let mut report = ExecutionReport::new(ExecutionReportParams {
+            id: order.id,
+            order_type: OrderType::Market,
+            side: order.side,
+            quantity: order.remaining_qty,
+            status: order.status,
+            time_in_force: None,
+            price: None,
+            post_only: false,
+        });
 
         let mut fills = Vec::new();
         order.remaining_qty = match order.side {
@@ -180,20 +173,19 @@ impl OrderBook {
     /// # Errors
     /// Returns `Err` if the input is invalid.
     pub fn limit(&mut self, options: LimitOrderOptions) -> Result<ExecutionReport> {
-        if let Err(err) = self.validate_limit_order(&options) {
-            return Err(err);
-        }
-        let mut order = LimitOrder::new(self.new_order_id(), options.clone());
-        let mut report = ExecutionReport::new(
-            order.id,
-            OrderType::Limit,
-            order.side,
-            order.orig_qty,
-            order.status,
-            Some(order.time_in_force),
-            Some(order.price), // here order price is Some because we have already validated in validate_limit_order
-            order.post_only,
-        );
+        self.validate_limit_order(&options)?;
+
+        let mut order = LimitOrder::new(self.new_order_id(), options);
+        let mut report = ExecutionReport::new(ExecutionReportParams {
+            id: order.id,
+            order_type: OrderType::Limit,
+            side: order.side,
+            quantity: order.orig_qty,
+            status: order.status,
+            time_in_force: Some(order.time_in_force),
+            price: Some(order.price), // here order price is Some because we have already validated in validate_limit_order
+            post_only: order.post_only,
+        });
 
         let mut fills = Vec::new();
         order.remaining_qty = match order.side {
@@ -213,17 +205,9 @@ impl OrderBook {
                 order.status = OrderStatus::PartiallyFilled;
                 self.orders.insert(order.id, order);
                 if order.side == Side::Buy {
-                    let _ = self
-                        .bids
-                        .entry(order.price)
-                        .or_insert_with(VecDeque::new)
-                        .push_back(order.id);
+                    self.bids.entry(order.price).or_default().push_back(order.id);
                 } else {
-                    let _ = self
-                        .asks
-                        .entry(order.price)
-                        .or_insert_with(VecDeque::new)
-                        .push_back(order.id);
+                    self.asks.entry(order.price).or_default().push_back(order.id);
                 }
             }
         } else {
@@ -381,7 +365,7 @@ impl OrderBook {
         // Restore previous journaling value
         self.journaling = old_journaling;
 
-        if let Some(r) = report.as_mut().ok() {
+        if let Ok(r) = report.as_mut() {
             if self.journaling {
                 self.last_op = safe_add(self.last_op, 1);
                 r.log = Some(JournalLog {
@@ -405,8 +389,8 @@ impl OrderBook {
 
         if let Some(q) = queue {
             for id in q {
-                if let Some(order) = self.orders.get(&id) {
-                    orders.push(order.clone());
+                if let Some(order) = self.orders.get(id) {
+                    orders.push(*order);
                 }
             }
         }
@@ -459,15 +443,15 @@ impl OrderBook {
     /// It returns a [`Snapshot`] struct, which can later be used with [`OrderBook::restore_snapshot`]
     /// to recreate the order book state exactly as it was at the moment of the snapshot.
     pub fn snapshot(&self) -> Snapshot {
-        return Snapshot {
+        Snapshot {
             orders: self.orders.clone(),
             bids: self.bids.clone(),
             asks: self.asks.clone(),
             last_op: self.last_op,
             next_order_id: self.next_order_id,
             ts: current_timestamp_millis(),
-        };
-    }    
+        }
+    }
 
     /// Restores the internal state of this [`OrderBook`] from a given [`Snapshot`].
     ///
@@ -503,17 +487,14 @@ impl OrderBook {
         logs.sort_by_key(|log| log.op_id);
 
         for log in &logs {
-            let res = match &log.o {
-                OrderOptions::Market(opts) => self.market(opts.clone()),
-                OrderOptions::Limit(opts) => self.limit(opts.clone()),
-                OrderOptions::Cancel(id) => self.cancel(*id),
-                OrderOptions::Modify { id, price, quantity } => self.modify(*id, *price, *quantity),
+            match &log.o {
+                OrderOptions::Market(opts) => self.market(*opts)?,
+                OrderOptions::Limit(opts) => self.limit(*opts)?,
+                OrderOptions::Cancel(id) => self.cancel(*id)?,
+                OrderOptions::Modify { id, price, quantity } => {
+                    self.modify(*id, *price, *quantity)?
+                }
             };
-
-            // propagate error immediately if any operation fails
-            if let Err(e) = res {
-                return Err(e);
-            }
         }
         Ok(())
     }
@@ -575,7 +556,7 @@ impl OrderBook {
         let mut remaining_qty = quantity_to_fill;
         let mut filled_prices = Vec::new();
         for (ask_price, queue) in self.asks.iter_mut() {
-            if remaining_qty <= 0 {
+            if remaining_qty == 0 {
                 break;
             }
             if let Some(limit_price) = limit_price {
@@ -607,7 +588,7 @@ impl OrderBook {
         let mut remaining_qty = quantity_to_fill;
         let mut filled_prices = Vec::new();
         for (bid_price, queue) in self.bids.iter_mut().rev() {
-            if remaining_qty <= 0 {
+            if remaining_qty == 0 {
                 break;
             }
             if let Some(limit_price) = limit_price {
@@ -635,7 +616,7 @@ impl OrderBook {
         let mut quantity_left = remaining_qty;
         while !order_queue.is_empty() && quantity_left > 0 {
             let Some(head_order_uuid) = order_queue.front() else { break };
-            let Some(mut head_order) = orders.remove(&head_order_uuid) else { break };
+            let Some(mut head_order) = orders.remove(head_order_uuid) else { break };
 
             if quantity_left < head_order.remaining_qty {
                 head_order.remaining_qty = safe_sub(head_order.remaining_qty, quantity_left);
@@ -689,11 +670,11 @@ impl OrderBook {
         if options.price == 0 {
             return Err(make_error(ErrorType::InvalidPrice));
         }
-        let time_in_force = options.time_in_force.unwrap_or_else(|| TimeInForce::GTC);
-        if time_in_force == TimeInForce::FOK {
-            if !self.limit_order_is_fillable(options.side, options.quantity, options.price) {
-                return Err(make_error(ErrorType::OrderFOK));
-            }
+        let time_in_force = options.time_in_force.unwrap_or(TimeInForce::GTC);
+        if time_in_force == TimeInForce::FOK
+            && !self.limit_order_is_fillable(options.side, options.quantity, options.price)
+        {
+            return Err(make_error(ErrorType::OrderFOK));
         }
         if options.post_only.unwrap_or(false) {
             let crosses = match options.side {
@@ -721,11 +702,11 @@ impl OrderBook {
     }
 
     fn limit_order_is_fillable(&self, side: Side, quantity: u64, price: u64) -> bool {
-        return if side == Side::Buy {
+        if side == Side::Buy {
             self.limit_buy_order_is_fillable(quantity, price)
         } else {
             self.limit_sell_order_is_fillable(quantity, price)
-        };
+        }
     }
 
     fn limit_buy_order_is_fillable(&self, quantity: u64, price: u64) -> bool {
@@ -733,7 +714,7 @@ impl OrderBook {
         for (ask_price, queue) in self.asks.iter() {
             if price >= *ask_price && cumulative_qty < quantity {
                 for id in queue.iter() {
-                    if let Some(order) = self.orders.get(&id) {
+                    if let Some(order) = self.orders.get(id) {
                         cumulative_qty = safe_add(cumulative_qty, order.remaining_qty)
                     }
                 }
@@ -749,7 +730,7 @@ impl OrderBook {
         for (bid_price, queue) in self.bids.iter().rev() {
             if price <= *bid_price && cumulative_qty < quantity {
                 for id in queue.iter() {
-                    if let Some(order) = self.orders.get(&id) {
+                    if let Some(order) = self.orders.get(id) {
                         cumulative_qty = safe_add(cumulative_qty, order.remaining_qty)
                     }
                 }
