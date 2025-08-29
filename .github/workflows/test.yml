@@ -1,0 +1,33 @@
+name: Test and Coverage
+
+on:
+  push:
+    paths-ignore:
+      - 'LICENSE'
+    branches:
+      - main
+  pull_request:
+    paths-ignore:
+      - 'LICENSE'
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Dependencies
+        uses: taiki-e/install-action@020705266844b275b711684191e11281be48860c # v2.58.27
+        with:
+          tool: cargo-llvm-cov
+      - name: Run tests
+        run: cargo llvm-cov --all-features --lcov --output-path target/lcov.info
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@fdcc8476540edceab3de004e990f80d881c6cc00 # v5.5.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/lcov.info
+          fail_ci_if_error: true
