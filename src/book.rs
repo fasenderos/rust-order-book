@@ -7,13 +7,13 @@
 //!
 //! # Example
 //! ```rust
-//! use my_crate::{OrderBookBuilder, Side, MarketOrderOptions};
+//! use rust_order_book::{OrderBookBuilder, Side, MarketOrderOptions};
 //!
 //! let mut ob = OrderBookBuilder::new("BTCUSD").with_journaling(true).build();
 //!
 //! let result = ob.market(MarketOrderOptions {
 //!     side: Side::Buy,
-//!     size: 10_000,
+//!     quantity: 10_000,
 //! });
 //! ```
 use std::collections::{BTreeMap, HashMap};
@@ -37,6 +37,10 @@ use std::collections::VecDeque;
 /// # Fields
 /// - `journaling`: If `true`, the order book will return a journal log for each operations.
 ///   Defaults to `false`.
+/// - `snapshot`: A previously captured [`Snapshot`] representing the full state
+///   of an order book at a given point in time.
+/// - `replay_logs`: A vector of [`JournalLog`] entries to replay. Logs should ideally be in
+///   chronological order (`op_id` ascending), but `replay_logs` will sort them internally.
 #[derive(Debug, Clone)]
 pub struct OrderBookOptions {
     pub journaling: bool,
@@ -82,6 +86,7 @@ impl OrderBook {
     ///
     /// # Example
     /// ```
+    /// use rust_order_book::{OrderBook, OrderBookOptions};
     /// let ob = OrderBook::new("BTCUSD", OrderBookOptions::default());
     /// ```
     pub fn new(symbol: &str, opts: OrderBookOptions) -> Self {
@@ -453,13 +458,6 @@ impl OrderBook {
     /// This function **does not fail** and can be called at any time.
     /// It returns a `Snapshot` struct, which can later be used with [`restore_snapshot`]
     /// to recreate the order book state exactly as it was at the moment of the snapshot.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let book = OrderBook::new("BTCUSD", OrderBookOptions::default());
-    /// let snap = book.snapshot(); // snap can now be serialized, stored, or inspected
-    /// ```
     pub fn snapshot(&self) -> Snapshot {
         return Snapshot {
             orders: self.orders.clone(),
@@ -469,6 +467,57 @@ impl OrderBook {
             next_order_id: self.next_order_id,
             ts: current_timestamp_millis(),
         };
+    }
+
+    
+
+    /// Restores the internal state of this [`OrderBook`] from a given [`Snapshot`].
+    ///
+    /// This replaces any existing orders and it is typically used when reconstructing
+    /// an order book from persistent storage.
+    ///
+    /// # Parameters
+    /// - `snapshot`: The snapshot to load into the order book.
+    pub fn restore_snapshot(&mut self, snapshot: Snapshot) {
+        self.orders = snapshot.orders;
+        self.bids = snapshot.bids;
+        self.asks = snapshot.asks;
+        self.last_op = snapshot.last_op;
+        self.next_order_id = snapshot.next_order_id;
+    }
+
+    /// Replays a sequence of journal logs to reconstruct the order book state.
+    ///
+    /// Each log entry represents a previously executed operation, such as a market order,
+    /// limit order, cancel, or modify. This function applies each operation in order.
+    ///
+    /// # Parameters
+    ///
+    /// - `logs`: A vector of [`JournalLog`] entries to be applied. Logs must be in chronological
+    ///   order to correctly reconstruct the state.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if all operations are successfully applied.
+    /// Returns `Err(OrderBookError)` if any operation fails; the replay stops at the first error.
+    pub fn replay_logs(&mut self, mut logs: Vec<JournalLog>) -> Result<()> {
+        // sort logs by op_id ascending
+        logs.sort_by_key(|log| log.op_id);
+
+        for log in &logs {
+            let res = match &log.o {
+                OrderOptions::Market(opts) => self.market(opts.clone()),
+                OrderOptions::Limit(opts) => self.limit(opts.clone()),
+                OrderOptions::Cancel(id) => self.cancel(*id),
+                OrderOptions::Modify { id, price, quantity } => self.modify(*id, *price, *quantity),
+            };
+
+            // propagate error immediately if any operation fails
+            if let Err(e) = res {
+                return Err(e);
+            }
+        }
+        Ok(())
     }
 
     /// Returns the current depth of the order book.
@@ -711,69 +760,6 @@ impl OrderBook {
             }
         }
         cumulative_qty >= quantity
-    }
-
-    /// Restores the internal state of this [`OrderBook`] from a given [`Snapshot`].
-    ///
-    /// This replaces any existing orders and it is typically used when reconstructing
-    /// an order book from persistent storage.
-    ///
-    /// # Parameters
-    /// - `snapshot`: The snapshot to load into the order book.
-    ///
-    /// # Examples
-    /// ```
-    /// let mut ob = OrderBook::new("BTCUSD", OrderBookOptions::default());
-    /// ob.restore_snapshot(snapshot);
-    /// ```
-    pub fn restore_snapshot(&mut self, snapshot: Snapshot) {
-        self.orders = snapshot.orders;
-        self.bids = snapshot.bids;
-        self.asks = snapshot.asks;
-        self.last_op = snapshot.last_op;
-        self.next_order_id = snapshot.next_order_id;
-    }
-
-    /// Replays a sequence of journal logs to reconstruct the order book state.
-    ///
-    /// Each log entry represents a previously executed operation, such as a market order,
-    /// limit order, cancel, or modify. This function applies each operation in order.
-    ///
-    /// # Parameters
-    ///
-    /// - `logs`: A vector of [`JournalLog`] entries to be applied. Logs must be in chronological
-    ///   order to correctly reconstruct the state.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if all operations are successfully applied.
-    /// Returns `Err(OrderBookError)` if any operation fails; the replay stops at the first error.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let mut book = OrderBook::new("BTCUSD", OrderBookOptions::default());
-    /// book.restore_snapshot(snapshot);
-    /// book.replay_logs(logs)?;
-    /// ```
-    pub fn replay_logs(&mut self, mut logs: Vec<JournalLog>) -> Result<()> {
-        // sort logs by op_id ascending
-        logs.sort_by_key(|log| log.op_id);
-
-        for log in &logs {
-            let res = match &log.o {
-                OrderOptions::Market(opts) => self.market(opts.clone()),
-                OrderOptions::Limit(opts) => self.limit(opts.clone()),
-                OrderOptions::Cancel(id) => self.cancel(*id),
-                OrderOptions::Modify { id, price, quantity } => self.modify(*id, *price, *quantity),
-            };
-
-            // propagate error immediately if any operation fails
-            if let Err(e) = res {
-                return Err(e);
-            }
-        }
-        Ok(())
     }
 
     fn new_order_id(&mut self) -> OrderId {

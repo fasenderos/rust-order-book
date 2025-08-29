@@ -34,12 +34,6 @@ pub struct FillReport {
 /// The report includes the amount filled, remaining quantity, order status,
 /// any matched trades (`fills`), and optional journaling info.
 ///
-/// The generic parameter `T` represents the type of order options originally
-/// submitted (e.g. [`LimitOrderOptions`] or [`MarketOrderOptions`]).
-///
-/// # Type Parameters
-/// - `T`: The original order input struct
-///
 /// # Fields
 /// - `order_id`: ID assigned to the order
 /// - `orig_qty`: Quantity originally requested

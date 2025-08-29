@@ -5,7 +5,7 @@
 //!
 //! # Example
 //! ```rust
-//! use my_crate::OrderBookBuilder;
+//! use rust_order_book::OrderBookBuilder;
 //!
 //! let ob = OrderBookBuilder::new("BTCUSD")
 //!     .with_journaling(true)
@@ -63,21 +63,11 @@ impl OrderBookBuilder {
     /// (if provided) and then applying all operations contained in the logs.
     ///
     /// # Parameters
-    ///
     /// - `logs`: A vector of [`JournalLog`] entries to replay. Logs should ideally be in
     ///   chronological order (`op_id` ascending), but `replay_logs` will sort them internally.
     ///
     /// # Returns
-    ///
     /// Returns `self` to allow chaining with other builder methods.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let builder = OrderBookBuilder::new("BTCUSD")
-    ///     .with_snapshot(snapshot)
-    ///     .with_replay_logs(logs)
-    ///     .build();
     /// ```
     pub fn with_replay_logs(mut self, logs: Vec<JournalLog>) -> Self {
         self.options.replay_logs = Some(logs);

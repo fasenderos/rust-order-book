@@ -16,9 +16,6 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 /// This struct is used to log operations such as order placements, cancellations,
 /// and modifications, allowing for features like replay, auditing, or persistence.
 ///
-/// # Type Parameters
-/// - `T`: The original input payload of the operation (e.g., [`LimitOrderOptions`], [`OrderId`], etc.)
-///
 /// # Fields
 /// - `op_id`: Unique operation ID, useful for ordering or deduplication.
 /// - `ts`: Timestamp of when the operation was recorded (in milliseconds since epoch).
