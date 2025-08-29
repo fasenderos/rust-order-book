@@ -161,24 +161,24 @@ impl LimitOrderOptions {
 
 /// `LimitOrder` is `pub` so that it can be exposed in public APIs such as
 /// [`crate::OrderBook::get_order`] and included in [`crate::Snapshot`]. Even though the type
-/// is public, its internal fields are private, so users
+/// is public, its internal fields are private and read-only, so users
 /// can inspect orders and snapshots without being able to mutate the order
 /// book state directly. This ensures safety while allowing serializable
 /// snapshots and journal replay functionality.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct LimitOrder {
-    pub id: OrderId,
-    pub side: Side,
-    pub orig_qty: Quantity,
-    pub executed_qty: Quantity,
-    pub price: Price,
-    pub order_type: OrderType,
-    pub time: i64,
-    pub time_in_force: TimeInForce,
-    pub post_only: bool,
-    pub taker_qty: Quantity,
-    pub maker_qty: Quantity,
-    pub status: OrderStatus,
+    pub(crate) id: OrderId,
+    pub(crate) side: Side,
+    pub(crate) orig_qty: Quantity,
+    pub(crate) executed_qty: Quantity,
+    pub(crate) price: Price,
+    pub(crate) order_type: OrderType,
+    pub(crate) time: i64,
+    pub(crate) time_in_force: TimeInForce,
+    pub(crate) post_only: bool,
+    pub(crate) taker_qty: Quantity,
+    pub(crate) maker_qty: Quantity,
+    pub(crate) status: OrderStatus,
 }
 
 impl LimitOrder {
