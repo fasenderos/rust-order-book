@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(ob.orders.len(), 2);
 
         // Verify that the orders match the original logs
-        assert_eq!(ob.get_order(OrderId(0)).unwrap().remaining_qty, Quantity(5));
-        assert_eq!(ob.get_order(OrderId(1)).unwrap().remaining_qty, Quantity(10));
+        assert_eq!(ob.get_order(OrderId(0)).unwrap().remaining_qty(), Quantity(5));
+        assert_eq!(ob.get_order(OrderId(1)).unwrap().remaining_qty(), Quantity(10));
     }
 }

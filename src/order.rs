@@ -4,15 +4,18 @@
 //! Users will not need to interact with internal structs like [`MarketOrder`]
 //! or [`LimitOrder`] directly.
 
-use std::{iter::Sum, ops::{Add, AddAssign, Div, Sub}};
+use crate::{
+    utils::{current_timestamp_millis, safe_add, safe_sub},
+    OrderStatus, OrderType, Side, TimeInForce,
+};
+use serde::{Deserialize, Serialize};
+use std::{
+    iter::Sum,
+    ops::{Add, AddAssign, Div, Sub},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize, Eq, Hash)]
 pub struct OrderId(pub u64);
-impl OrderId {
-    pub fn value(self) -> u64 {
-        self.0
-    }
-}
 impl AddAssign<u64> for OrderId {
     fn add_assign(&mut self, rhs: u64) {
         self.0 += rhs;
@@ -30,7 +33,7 @@ impl Add for Price {
     type Output = Price;
 
     fn add(self, rhs: Price) -> Price {
-        Price(self.0.saturating_add(rhs.0))
+        Price(safe_add(self.0, rhs.0))
     }
 }
 
@@ -38,7 +41,7 @@ impl Sub for Price {
     type Output = Price;
 
     fn sub(self, rhs: Price) -> Price {
-        Price(self.0.saturating_sub(rhs.0))
+        Price(safe_sub(self.0, rhs.0))
     }
 }
 
@@ -61,14 +64,14 @@ impl Add for Quantity {
     type Output = Quantity;
 
     fn add(self, rhs: Quantity) -> Quantity {
-        Quantity(self.0.saturating_add(rhs.0))
+        Quantity(safe_add(self.0, rhs.0))
     }
 }
 impl Sub for Quantity {
     type Output = Quantity;
 
     fn sub(self, rhs: Quantity) -> Quantity {
-        Quantity(self.0.saturating_sub(rhs.0))
+        Quantity(safe_sub(self.0, rhs.0))
     }
 }
 impl AddAssign<u64> for Quantity {
@@ -81,9 +84,6 @@ impl Sum for Quantity {
         Quantity(iter.map(|q| q.0).sum())
     }
 }
-
-use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeInForce};
-use serde::{Deserialize, Serialize};
 
 /// Options for submitting a market order to the order book.
 ///
@@ -100,10 +100,7 @@ pub struct MarketOrderOptions {
 }
 impl MarketOrderOptions {
     pub fn new(side: Side, quantity: u64) -> Self {
-        Self {
-            side,
-            quantity: Quantity(quantity),
-        }
+        Self { side, quantity: Quantity(quantity) }
     }
 }
 
@@ -113,7 +110,6 @@ pub(crate) struct MarketOrder {
     pub side: Side,
     pub orig_qty: Quantity,
     pub executed_qty: Quantity,
-    pub remaining_qty: Quantity,
     pub status: OrderStatus,
 }
 
@@ -124,9 +120,11 @@ impl MarketOrder {
             side: options.side,
             orig_qty: options.quantity,
             executed_qty: Quantity(0),
-            remaining_qty: options.quantity,
             status: OrderStatus::New,
         }
+    }
+    pub fn remaining_qty(&self) -> Quantity {
+        self.orig_qty.sub(self.executed_qty)
     }
 }
 
@@ -150,14 +148,14 @@ pub struct LimitOrderOptions {
     pub post_only: Option<bool>,
 }
 impl LimitOrderOptions {
-    pub fn new(side: Side, quantity: u64, price: u64, time_in_force: Option<TimeInForce>, post_only: Option<bool>) -> Self {
-        Self {
-            side,
-            quantity: Quantity(quantity),
-            price: Price(price),
-            time_in_force,
-            post_only
-        }
+    pub fn new(
+        side: Side,
+        quantity: u64,
+        price: u64,
+        time_in_force: Option<TimeInForce>,
+        post_only: Option<bool>,
+    ) -> Self {
+        Self { side, quantity: Quantity(quantity), price: Price(price), time_in_force, post_only }
     }
 }
 
@@ -165,9 +163,8 @@ impl LimitOrderOptions {
 pub struct LimitOrder {
     pub id: OrderId,
     pub side: Side,
-    pub executed_qty: Quantity,
-    pub remaining_qty: Quantity,
     pub orig_qty: Quantity,
+    pub executed_qty: Quantity,
     pub price: Price,
     pub order_type: OrderType,
     pub time: i64,
@@ -185,7 +182,6 @@ impl LimitOrder {
             side: options.side,
             orig_qty: options.quantity,
             executed_qty: Quantity(0),
-            remaining_qty: options.quantity,
             price: options.price,
             order_type: OrderType::Limit,
             time: current_timestamp_millis(),
@@ -195,6 +191,10 @@ impl LimitOrder {
             maker_qty: Quantity(0),
             status: OrderStatus::New,
         }
+    }
+
+    pub fn remaining_qty(&self) -> Quantity {
+        self.orig_qty.sub(self.executed_qty)
     }
 }
 

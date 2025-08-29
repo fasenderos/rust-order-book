@@ -11,10 +11,7 @@
 //!
 //! let mut ob = OrderBookBuilder::new("BTCUSD").with_journaling(true).build();
 //!
-//! let result = ob.market(MarketOrderOptions {
-//!     side: Side::Buy,
-//!     quantity: 10_000,
-//! });
+//! let result = ob.market(MarketOrderOptions::new(Side::Buy, 10_000));
 //! ```
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -24,7 +21,7 @@ use crate::enums::{JournalOp, OrderOptions};
 use crate::journal::Snapshot;
 use crate::order::{OrderId, Price, Quantity};
 use crate::report::ExecutionReportParams;
-use crate::utils::{current_timestamp_millis, safe_add, safe_sub};
+use crate::utils::{current_timestamp_millis, safe_add};
 use crate::{
     error::{make_error, ErrorType, Result},
     journal::JournalLog,
@@ -123,7 +120,7 @@ impl OrderBook {
             id: order.id,
             order_type: OrderType::Market,
             side: order.side,
-            quantity: order.remaining_qty,
+            quantity: order.remaining_qty(),
             status: order.status,
             time_in_force: None,
             price: None,
@@ -131,18 +128,18 @@ impl OrderBook {
         });
 
         let mut fills = Vec::new();
-        order.remaining_qty = match order.side {
-            Side::Buy => self.match_with_asks(order.remaining_qty, &mut fills, None),
-            Side::Sell => self.match_with_bids(order.remaining_qty, &mut fills, None),
+        let remaining_qty = match order.side {
+            Side::Buy => self.match_with_asks(order.remaining_qty(), &mut fills, None),
+            Side::Sell => self.match_with_bids(order.remaining_qty(), &mut fills, None),
         };
-        order.executed_qty = order.orig_qty.sub(order.remaining_qty);
-        order.status = if order.remaining_qty.value() > 0 {
+        order.executed_qty = order.orig_qty.sub(remaining_qty);
+        order.status = if order.remaining_qty().value() > 0 {
             OrderStatus::PartiallyFilled
         } else {
             OrderStatus::Filled
         };
 
-        report.remaining_qty = order.remaining_qty;
+        report.remaining_qty = order.remaining_qty();
         report.executed_qty = order.executed_qty;
         report.status = order.status;
         report.taker_qty = order.executed_qty;
@@ -158,6 +155,9 @@ impl OrderBook {
         }
 
         Ok(report)
+    }
+    pub fn market_raw(&mut self, side: Side, quantity: u64) -> Result<ExecutionReport> {
+        self.market(MarketOrderOptions { side, quantity: Quantity(quantity) })
     }
 
     /// Submits a new limit order to the order book.
@@ -189,15 +189,17 @@ impl OrderBook {
         });
 
         let mut fills = Vec::new();
-        order.remaining_qty = match order.side {
-            Side::Buy => self.match_with_asks(order.remaining_qty, &mut fills, Some(order.price)),
-            Side::Sell => self.match_with_bids(order.remaining_qty, &mut fills, Some(order.price)),
+        let remaining_qty = match order.side {
+            Side::Buy => self.match_with_asks(order.remaining_qty(), &mut fills, Some(order.price)),
+            Side::Sell => {
+                self.match_with_bids(order.remaining_qty(), &mut fills, Some(order.price))
+            }
         };
-        order.executed_qty = order.orig_qty.sub(order.remaining_qty);
-        order.taker_qty = order.orig_qty.sub(order.remaining_qty);
-        order.maker_qty = order.remaining_qty;
+        order.executed_qty = order.orig_qty.sub(remaining_qty);
+        order.taker_qty = order.orig_qty.sub(order.remaining_qty());
+        order.maker_qty = order.remaining_qty();
 
-        if order.remaining_qty.value() > 0 {
+        if order.remaining_qty().value() > 0 {
             if order.time_in_force == TimeInForce::IOC {
                 // If IOC order was not matched completely so set as canceled
                 // and don't insert the order in the order book
@@ -215,7 +217,7 @@ impl OrderBook {
             order.status = OrderStatus::Filled;
         }
 
-        report.remaining_qty = order.remaining_qty;
+        report.remaining_qty = order.remaining_qty();
         report.executed_qty = order.executed_qty;
         report.taker_qty = order.taker_qty;
         report.maker_qty = order.maker_qty;
@@ -232,6 +234,22 @@ impl OrderBook {
         }
 
         Ok(report)
+    }
+    pub fn limit_raw(
+        &mut self,
+        side: Side,
+        quantity: u64,
+        price: u64,
+        time_in_force: Option<TimeInForce>,
+        post_only: Option<bool>,
+    ) -> Result<ExecutionReport> {
+        self.limit(LimitOrderOptions {
+            side,
+            quantity: Quantity(quantity),
+            price: Price(price),
+            time_in_force,
+            post_only,
+        })
     }
 
     /// Cancels an existing order by ID.
@@ -270,7 +288,7 @@ impl OrderBook {
             order_id: order.id,
             orig_qty: order.orig_qty,
             executed_qty: order.executed_qty,
-            remaining_qty: order.remaining_qty,
+            remaining_qty: order.remaining_qty(),
             taker_qty: order.taker_qty,
             maker_qty: order.maker_qty,
             order_type: order.order_type,
@@ -294,6 +312,10 @@ impl OrderBook {
         }
 
         Ok(report)
+    }
+
+    pub fn cancel_raw(&mut self, id: u64) -> Result<ExecutionReport> {
+        self.cancel(OrderId(id))
     }
 
     /// Modifies an existing order by cancelling it and submitting a new one.
@@ -325,7 +347,7 @@ impl OrderBook {
         let old_journaling = self.journaling;
         // Temporary disable journaling
         self.journaling = false;
-        let order = match self.cancel(id) {
+        let report = match self.cancel(id) {
             Ok(o) => o,
             Err(e) => {
                 // Restore previous journaling value before returning
@@ -336,25 +358,25 @@ impl OrderBook {
 
         let mut report = match (price, quantity) {
             (None, Some(quantity)) => self.limit(LimitOrderOptions {
-                side: order.side,
+                side: report.side,
                 quantity,
-                price: order.price,
-                time_in_force: Some(order.time_in_force),
-                post_only: Some(order.post_only),
+                price: report.price,
+                time_in_force: Some(report.time_in_force),
+                post_only: Some(report.post_only),
             }),
             (Some(price), None) => self.limit(LimitOrderOptions {
-                side: order.side,
-                quantity: order.remaining_qty,
+                side: report.side,
+                quantity: report.remaining_qty,
                 price,
-                time_in_force: Some(order.time_in_force),
-                post_only: Some(order.post_only),
+                time_in_force: Some(report.time_in_force),
+                post_only: Some(report.post_only),
             }),
             (Some(price), Some(quantity)) => self.limit(LimitOrderOptions {
-                side: order.side,
+                side: report.side,
                 quantity,
                 price,
-                time_in_force: Some(order.time_in_force),
-                post_only: Some(order.post_only),
+                time_in_force: Some(report.time_in_force),
+                post_only: Some(report.post_only),
             }),
             (None, None) => {
                 // Restore previous journaling value before returning
@@ -378,6 +400,15 @@ impl OrderBook {
             }
         }
         report
+    }
+
+    pub fn modify_raw(
+        &mut self,
+        id: u64,
+        price: Option<u64>,
+        quantity: Option<u64>,
+    ) -> Result<ExecutionReport> {
+        self.modify(OrderId(id), price.map(Price), quantity.map(Quantity))
     }
 
     /// Get all orders at a specific price level
@@ -524,7 +555,7 @@ impl OrderBook {
             let volume: Quantity = queue
                 .iter()
                 .filter_map(|id| self.orders.get(id))
-                .map(|order| order.remaining_qty)
+                .map(|order| order.remaining_qty())
                 .sum();
             asks.push((*ask_price, volume));
         }
@@ -537,7 +568,7 @@ impl OrderBook {
             let volume: Quantity = queue
                 .iter()
                 .filter_map(|id| self.orders.get(id))
-                .map(|order| order.remaining_qty)
+                .map(|order| order.remaining_qty())
                 .sum();
             bids.push((*bid_price, volume));
         }
@@ -619,8 +650,7 @@ impl OrderBook {
             let Some(head_order_uuid) = order_queue.front() else { break };
             let Some(mut head_order) = orders.remove(head_order_uuid) else { break };
 
-            if quantity_left < head_order.remaining_qty {
-                head_order.remaining_qty = head_order.remaining_qty.sub(quantity_left);
+            if quantity_left < head_order.remaining_qty() {
                 head_order.executed_qty = head_order.executed_qty.add(quantity_left);
                 head_order.status = OrderStatus::PartiallyFilled;
                 fills.push(FillReport {
@@ -634,11 +664,9 @@ impl OrderBook {
                 quantity_left = Quantity(0);
             } else {
                 order_queue.pop_front();
-                quantity_left = quantity_left.sub(head_order.remaining_qty);
+                quantity_left = quantity_left.sub(head_order.remaining_qty());
 
-                // let mut canceled_order = self.cancel_order(head_order_uuid, order_queue);
-                head_order.executed_qty = head_order.executed_qty.add(head_order.remaining_qty);
-                head_order.remaining_qty = Quantity(0);
+                head_order.executed_qty = head_order.executed_qty.add(head_order.remaining_qty());
                 head_order.status = OrderStatus::Filled;
                 fills.push(FillReport {
                     order_id: head_order.id,
@@ -715,7 +743,7 @@ impl OrderBook {
             if price >= *ask_price && cumulative_qty < quantity {
                 for id in queue.iter() {
                     if let Some(order) = self.orders.get(id) {
-                        cumulative_qty += order.remaining_qty.value();
+                        cumulative_qty += order.remaining_qty().value();
                     }
                 }
             } else {
@@ -731,7 +759,7 @@ impl OrderBook {
             if price <= *bid_price && cumulative_qty < quantity {
                 for id in queue.iter() {
                     if let Some(order) = self.orders.get(id) {
-                        cumulative_qty += order.remaining_qty.value()
+                        cumulative_qty += order.remaining_qty().value()
                     }
                 }
             } else {
@@ -750,28 +778,28 @@ impl OrderBook {
 
 impl fmt::Display for OrderBook {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // --- ASK (decrescente) ---
+        // --- ASKs ---
         for (price, order_ids) in self.asks.iter().rev() {
             let volume: Quantity = order_ids
                 .iter()
                 .filter_map(|id| self.orders.get(id))
-                .map(|order| order.remaining_qty)
+                .map(|order| order.remaining_qty())
                 .sum();
 
-            writeln!(f, "{:?} -> {:?}", price, volume)?;
+            writeln!(f, "{} -> {}", price.value(), volume.value())?;
         }
 
         writeln!(f, "------------------------------------")?;
 
-        // --- BID (decrescente) ---
+        // --- BIDs ---
         for (price, order_ids) in self.bids.iter().rev() {
             let volume: Quantity = order_ids
                 .iter()
                 .filter_map(|id| self.orders.get(id))
-                .map(|order| order.remaining_qty)
+                .map(|order| order.remaining_qty())
                 .sum();
 
-            writeln!(f, "{:?} -> {:?}", price.value(), volume)?;
+            writeln!(f, "{} -> {}", price.value(), volume.value())?;
         }
 
         Ok(())
