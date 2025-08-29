@@ -26,7 +26,7 @@ pub(crate) enum ErrorType {
 
 impl ErrorType {
     /// Numeric code for the error type.
-    pub fn code(self) -> u32 {
+    pub(crate) fn code(self) -> u32 {
         match self {
             // 10xx General issues
             ErrorType::Default => 1000,
@@ -49,7 +49,7 @@ impl ErrorType {
     }
 
     /// Default human message for the error type.
-    pub const fn message(self) -> &'static str {
+    pub(crate) const fn message(self) -> &'static str {
         match self {
             // 10xx General issues
             ErrorType::Default => "Something wrong",
@@ -89,28 +89,21 @@ pub struct OrderBookError {
 impl OrderBookError {
     /// Create from explicit code and message.
     #[inline]
-    pub fn new(code: u32, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: u32, message: impl Into<String>) -> Self {
         Self { code, message: message.into() }
     }
 
     /// Create from a known numeric code, using the standard message if known.
     #[inline]
-    pub fn from_code(code: u32) -> Self {
+    pub(crate) fn from_code(code: u32) -> Self {
         let msg = default_message_for_code(code);
         Self::new(code, msg)
     }
 
     /// Create from a free-form message, using the default code (1000).
     #[inline]
-    pub fn from_message(message: impl Into<String>) -> Self {
+    pub(crate) fn from_message(message: impl Into<String>) -> Self {
         Self::new(ErrorType::Default.code(), message)
-    }
-
-    /// Return a new error with the same code but a different message.
-    #[inline]
-    pub fn with_message(mut self, message: impl Into<String>) -> Self {
-        self.message = message.into();
-        self
     }
 }
 
@@ -123,7 +116,7 @@ impl fmt::Display for OrderBookError {
 /// Map known numeric codes to their default messages.
 /// Unknown codes get `"Unknown error ({code})"`.
 #[inline]
-pub fn default_message_for_code(code: u32) -> Cow<'static, str> {
+pub(crate) fn default_message_for_code(code: u32) -> Cow<'static, str> {
     match code {
         // 10xx General issues
         1000 => Cow::Borrowed(ErrorType::Default.message()),
@@ -155,7 +148,7 @@ impl From<ErrorType> for OrderBookError {
 }
 
 /// Trait to create a `OrderBookError` from different inputs (code, message or type).
-pub trait IntoOrderBookError {
+pub(crate) trait IntoOrderBookError {
     fn into_error(self) -> OrderBookError;
 }
 
@@ -189,7 +182,7 @@ impl IntoOrderBookError for String {
 
 /// One-stop utility: accepts either a code (`u32`), a message (`&str`/`String`) or an `ErrorType`.
 #[inline]
-pub fn make_error<E: IntoOrderBookError>(e: E) -> OrderBookError {
+pub(crate) fn make_error<E: IntoOrderBookError>(e: E) -> OrderBookError {
     e.into_error()
 }
 
@@ -285,13 +278,6 @@ mod tests {
         let err = OrderBookError::from_message("Oops");
         assert_eq!(err.code, 1000);
         assert_eq!(err.message, "Oops");
-    }
-
-    #[test]
-    fn test_order_book_error_with_message() {
-        let err = OrderBookError::new(1101, "Old").with_message("New");
-        assert_eq!(err.code, 1101);
-        assert_eq!(err.message, "New");
     }
 
     #[test]

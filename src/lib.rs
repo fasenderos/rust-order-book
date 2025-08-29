@@ -12,5 +12,5 @@ pub use builder::OrderBookBuilder;
 pub use enums::{OrderStatus, OrderType, Side, TimeInForce};
 pub use error::OrderBookError;
 pub use journal::{JournalLog, Snapshot};
-pub use order::{LimitOrderOptions, MarketOrderOptions};
+pub use order::{LimitOrderOptions, MarketOrderOptions, OrderId, Price, Quantity};
 pub use report::{ExecutionReport, FillReport};

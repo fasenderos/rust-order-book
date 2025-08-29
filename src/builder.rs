@@ -106,6 +106,7 @@ mod tests {
 
     use crate::{
         enums::{JournalOp, OrderOptions},
+        order::{OrderId, Price, Quantity},
         utils::current_timestamp_millis,
         LimitOrderOptions, MarketOrderOptions, Side,
     };
@@ -145,14 +146,14 @@ mod tests {
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
             last_op: 42,
-            next_order_id: 100,
+            next_order_id: OrderId(100),
             ts: current_timestamp_millis(),
         };
 
         let book = OrderBookBuilder::new("BTCUSD").with_snapshot(snap).build();
 
         assert_eq!(book.last_op, 42);
-        assert_eq!(book.next_order_id, 100);
+        assert_eq!(book.next_order_id, OrderId(100));
         assert_eq!(book.orders.len(), 0);
     }
 
@@ -165,8 +166,8 @@ mod tests {
                 ts: 123457,
                 op: JournalOp::Limit,
                 o: OrderOptions::Limit(LimitOrderOptions {
-                    quantity: 10,
-                    price: 1100,
+                    quantity: Quantity(10),
+                    price: Price(1100),
                     side: Side::Sell,
                     post_only: None,
                     time_in_force: None,
@@ -177,8 +178,8 @@ mod tests {
                 ts: 123457,
                 op: JournalOp::Limit,
                 o: OrderOptions::Limit(LimitOrderOptions {
-                    quantity: 10,
-                    price: 1000,
+                    quantity: Quantity(10),
+                    price: Price(1000),
                     side: Side::Buy,
                     post_only: None,
                     time_in_force: None,
@@ -188,7 +189,10 @@ mod tests {
                 op_id: 3,
                 ts: 123456,
                 op: JournalOp::Market,
-                o: OrderOptions::Market(MarketOrderOptions { quantity: 5, side: Side::Buy }),
+                o: OrderOptions::Market(MarketOrderOptions {
+                    quantity: Quantity(5),
+                    side: Side::Buy,
+                }),
             },
         ];
 
@@ -199,7 +203,7 @@ mod tests {
         assert_eq!(ob.orders.len(), 2);
 
         // Verify that the orders match the original logs
-        assert_eq!(ob.get_order(0).unwrap().remaining_qty, 5);
-        assert_eq!(ob.get_order(1).unwrap().remaining_qty, 10);
+        assert_eq!(ob.get_order(OrderId(0)).unwrap().remaining_qty(), Quantity(5));
+        assert_eq!(ob.get_order(OrderId(1)).unwrap().remaining_qty(), Quantity(10));
     }
 }

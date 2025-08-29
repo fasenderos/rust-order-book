@@ -6,7 +6,7 @@
 
 use crate::{
     enums::{JournalOp, OrderOptions},
-    order::{LimitOrder, OrderId},
+    order::{LimitOrder, OrderId, Price},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -32,8 +32,8 @@ pub struct JournalLog {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Snapshot {
     pub orders: HashMap<OrderId, LimitOrder>,
-    pub bids: BTreeMap<u64, VecDeque<OrderId>>,
-    pub asks: BTreeMap<u64, VecDeque<OrderId>>,
+    pub bids: BTreeMap<Price, VecDeque<OrderId>>,
+    pub asks: BTreeMap<Price, VecDeque<OrderId>>,
     pub last_op: u64,
     pub next_order_id: OrderId,
     pub ts: i64,
