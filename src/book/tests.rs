@@ -162,7 +162,6 @@ fn test_limit_order() {
     assert_eq!(resp.taker_qty, 5);
     assert_eq!(resp.status, OrderStatus::Filled);
     assert!(resp.log.is_none());
-    println!("{}", ob);
 
     // Test IOC order
     let l6 = LimitOrderOptions {
@@ -174,7 +173,6 @@ fn test_limit_order() {
     };
     let resp = ob.limit(l6);
     let resp = resp.unwrap();
-    println!("{:?}", resp);
     assert_eq!(resp.executed_qty, 3);
     assert_eq!(resp.remaining_qty, 2);
     assert_eq!(resp.taker_qty, 3);
@@ -620,7 +618,6 @@ fn test_snapshot() {
     );
 
     let snap = ob.snapshot();
-    println!("{:?}", snap);
     assert_eq!(snap.last_op, 6);
     assert_eq!(snap.asks.len(), 2); // 1100 - 1200
     assert_eq!(snap.bids.len(), 2); // 1000 - 900
