@@ -11,16 +11,9 @@ documentation = "https://docs.rs/rust-order-book"
 keywords = [
     "orderbook",
     "limit-order-book",
-    "order-book",
-    "rust-order-book",
-    "matching-algorithm",
     "matching-engine",
     "trading-algorithm",
-    "hft-trading",
-    "exchange",
-    "lob",
-    "trading",
-    "finance",
+    "exchange"
 ]
 categories = ["finance", "algorithms", "data-structures", "cryptography::cryptocurrencies"]
 readme = "README.md"
