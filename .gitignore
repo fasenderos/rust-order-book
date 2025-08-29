@@ -1,2 +1,8 @@
-.vscode
-target
+# IDE / editor
+.vscode/
+
+# Build output
+target/
+
+# Cargo
+**/Cargo.lock

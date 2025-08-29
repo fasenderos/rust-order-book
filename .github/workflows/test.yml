@@ -3,12 +3,16 @@ name: Test and Coverage
 on:
   push:
     paths-ignore:
+      - 'AUTHORS'
       - 'LICENSE'
+      - 'README.md'
     branches:
       - main
   pull_request:
     paths-ignore:
+      - 'AUTHORS'
       - 'LICENSE'
+      - 'README.md'
     branches:
       - main
 
