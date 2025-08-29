@@ -1,6 +1,6 @@
 [package]
 name = "rust-order-book"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 authors = ["Andrea Fassina <fasenderos@gmail.com>"]
 description = "A Rust Lmit Order Book for high-frequency trading (HFT)."

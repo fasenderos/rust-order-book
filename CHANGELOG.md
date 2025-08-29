@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 ### <!-- 3 -->📚 Documentation
 
 - Improve readme
+- Update changelog
 
 
 ### <!-- 4 -->⚡ Performance
