@@ -24,8 +24,8 @@ use crate::{
 #[derive(Debug)]
 pub struct FillReport {
     pub order_id: OrderId,
-    pub price: u64,
-    pub quantity: u64,
+    pub price: Price,
+    pub quantity: Quantity,
     pub status: OrderStatus,
 }
 
@@ -64,14 +64,14 @@ pub struct ExecutionReportParams {
 #[derive(Debug)]
 pub struct ExecutionReport {
     pub order_id: OrderId,
-    pub orig_qty: u64,
-    pub executed_qty: u64,
-    pub remaining_qty: u64,
-    pub taker_qty: u64,
-    pub maker_qty: u64,
+    pub orig_qty: Quantity,
+    pub executed_qty: Quantity,
+    pub remaining_qty: Quantity,
+    pub taker_qty: Quantity,
+    pub maker_qty: Quantity,
     pub order_type: OrderType,
     pub side: Side,
-    pub price: u64,
+    pub price: Price,
     pub status: OrderStatus,
     pub time_in_force: TimeInForce,
     pub post_only: bool,
@@ -97,14 +97,14 @@ impl ExecutionReport {
         Self {
             order_id: params.id,
             orig_qty: params.quantity,
-            executed_qty: 0,
+            executed_qty: Quantity(0),
             remaining_qty: params.quantity,
             status: params.status,
-            taker_qty: 0,
-            maker_qty: 0,
+            taker_qty: Quantity(0),
+            maker_qty: Quantity(0),
             order_type: params.order_type,
             side: params.side,
-            price: params.price.unwrap_or(0),
+            price: params.price.unwrap_or(Price(0)),
             // market order are always IOC
             time_in_force: if params.order_type == OrderType::Market {
                 TimeInForce::IOC

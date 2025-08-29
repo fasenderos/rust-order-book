@@ -5,7 +5,7 @@ mod lobster;
 mod orderbookrs;
 mod rust_order_book;
 
-pub const N_ORDERS: &[u64] = &[1_000, 10_000, 100_000, 1_000_000, 2_000_000];
+pub const N_ORDERS: &[u64] = &[100_000, 1_000_000];
 
 fn rust_order_book_benchmark(c: &mut Criterion) {
     rust_order_book::run(c, N_ORDERS);
@@ -25,9 +25,9 @@ fn orderbook_rs_benchmark(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    lobster_benchmark,
-    limitbook_benchmark,
-    orderbook_rs_benchmark,
+    // lobster_benchmark,
+    // limitbook_benchmark,
+    // orderbook_rs_benchmark,
     rust_order_book_benchmark
 );
 criterion_main!(benches);

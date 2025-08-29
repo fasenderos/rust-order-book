@@ -4,9 +4,83 @@
 //! Users will not need to interact with internal structs like [`MarketOrder`]
 //! or [`LimitOrder`] directly.
 
-pub type OrderId = u64;
-pub type Price = u64;
-pub type Quantity = u64;
+use std::{iter::Sum, ops::{Add, AddAssign, Div, Sub}};
+
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize, Eq, Hash)]
+pub struct OrderId(pub u64);
+impl OrderId {
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+impl AddAssign<u64> for OrderId {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0 += rhs;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord)]
+pub struct Price(pub u64);
+impl Price {
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+impl Add for Price {
+    type Output = Price;
+
+    fn add(self, rhs: Price) -> Price {
+        Price(self.0.saturating_add(rhs.0))
+    }
+}
+
+impl Sub for Price {
+    type Output = Price;
+
+    fn sub(self, rhs: Price) -> Price {
+        Price(self.0.saturating_sub(rhs.0))
+    }
+}
+
+impl Div for Price {
+    type Output = Price;
+
+    fn div(self, rhs: Price) -> Price {
+        Price(self.0.saturating_div(rhs.0))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd)]
+pub struct Quantity(pub u64);
+impl Quantity {
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+impl Add for Quantity {
+    type Output = Quantity;
+
+    fn add(self, rhs: Quantity) -> Quantity {
+        Quantity(self.0.saturating_add(rhs.0))
+    }
+}
+impl Sub for Quantity {
+    type Output = Quantity;
+
+    fn sub(self, rhs: Quantity) -> Quantity {
+        Quantity(self.0.saturating_sub(rhs.0))
+    }
+}
+impl AddAssign<u64> for Quantity {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0 += rhs;
+    }
+}
+impl Sum for Quantity {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        Quantity(iter.map(|q| q.0).sum())
+    }
+}
 
 use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeInForce};
 use serde::{Deserialize, Serialize};
@@ -22,16 +96,24 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarketOrderOptions {
     pub side: Side,
-    pub quantity: u64,
+    pub quantity: Quantity,
+}
+impl MarketOrderOptions {
+    pub fn new(side: Side, quantity: u64) -> Self {
+        Self {
+            side,
+            quantity: Quantity(quantity),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct MarketOrder {
     pub id: OrderId,
     pub side: Side,
-    pub orig_qty: u64,
-    pub executed_qty: u64,
-    pub remaining_qty: u64,
+    pub orig_qty: Quantity,
+    pub executed_qty: Quantity,
+    pub remaining_qty: Quantity,
     pub status: OrderStatus,
 }
 
@@ -41,7 +123,7 @@ impl MarketOrder {
             id,
             side: options.side,
             orig_qty: options.quantity,
-            executed_qty: 0,
+            executed_qty: Quantity(0),
             remaining_qty: options.quantity,
             status: OrderStatus::New,
         }
@@ -62,26 +144,37 @@ impl MarketOrder {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrderOptions {
     pub side: Side,
-    pub quantity: u64,
-    pub price: u64,
+    pub quantity: Quantity,
+    pub price: Price,
     pub time_in_force: Option<TimeInForce>,
     pub post_only: Option<bool>,
+}
+impl LimitOrderOptions {
+    pub fn new(side: Side, quantity: u64, price: u64, time_in_force: Option<TimeInForce>, post_only: Option<bool>) -> Self {
+        Self {
+            side,
+            quantity: Quantity(quantity),
+            price: Price(price),
+            time_in_force,
+            post_only
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct LimitOrder {
     pub id: OrderId,
     pub side: Side,
-    pub executed_qty: u64,
-    pub remaining_qty: u64,
-    pub orig_qty: u64,
-    pub price: u64,
+    pub executed_qty: Quantity,
+    pub remaining_qty: Quantity,
+    pub orig_qty: Quantity,
+    pub price: Price,
     pub order_type: OrderType,
     pub time: i64,
     pub time_in_force: TimeInForce,
     pub post_only: bool,
-    pub taker_qty: u64,
-    pub maker_qty: u64,
+    pub taker_qty: Quantity,
+    pub maker_qty: Quantity,
     pub status: OrderStatus,
 }
 
@@ -91,15 +184,15 @@ impl LimitOrder {
             id,
             side: options.side,
             orig_qty: options.quantity,
-            executed_qty: 0,
+            executed_qty: Quantity(0),
             remaining_qty: options.quantity,
             price: options.price,
             order_type: OrderType::Limit,
             time: current_timestamp_millis(),
             time_in_force: get_order_time_in_force(options.time_in_force),
             post_only: options.post_only.unwrap_or(false),
-            taker_qty: 0,
-            maker_qty: 0,
+            taker_qty: Quantity(0),
+            maker_qty: Quantity(0),
             status: OrderStatus::New,
         }
     }
