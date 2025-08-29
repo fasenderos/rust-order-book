@@ -2,9 +2,12 @@
 name = "rust-order-book"
 version = "0.0.1"
 edition = "2021"
+authors = ["Andrea Fassina <fasenderos@gmail.com>"]
+description = "A Rust Lmit Order Book for high-frequency trading (HFT)."
+license = "MIT"
 repository = 'https://github.com/fasenderos/rust-order-book'
 homepage = 'https://github.com/fasenderos/rust-order-book'
-description = "A Rust Lmit Order Book for high-frequency trading (HFT)."
+documentation = "https://docs.rs/rust-order-book"
 keywords = [
     "orderbook",
     "limit-order-book",
@@ -20,7 +23,6 @@ keywords = [
     "finance",
 ]
 categories = ["finance", "algorithms", "data-structures", "cryptography::cryptocurrencies"]
-license = "MIT"
 readme = "README.md"
 
 [dependencies]

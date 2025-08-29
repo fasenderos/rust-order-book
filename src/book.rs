@@ -63,7 +63,7 @@ pub struct Depth {
 /// A limit order book implementation with support for market orders,
 /// limit orders, cancellation, modification and real-time depth.
 ///
-/// Use [`OrderBookBuilder`] to create an instance with optional features
+/// Use [`crate::OrderBookBuilder`] to create an instance with optional features
 /// like journaling or snapshot restoration.
 pub struct OrderBook {
     pub(crate) last_op: u64,
@@ -78,7 +78,7 @@ pub struct OrderBook {
 impl OrderBook {
     /// Creates a new `OrderBook` instance with the given symbol and options.
     ///
-    /// Prefer using [`OrderBookBuilder`] for clarity and flexibility.
+    /// Prefer using [`crate::OrderBookBuilder`] for clarity and flexibility.
     ///
     /// # Parameters
     /// - `symbol`: Market symbol (e.g., `"BTCUSD"`)
@@ -456,7 +456,7 @@ impl OrderBook {
     /// - `ts`: a timestamp representing when the snapshot was taken
     ///
     /// This function **does not fail** and can be called at any time.
-    /// It returns a `Snapshot` struct, which can later be used with [`restore_snapshot`]
+    /// It returns a [`Snapshot`] struct, which can later be used with [`OrderBook::restore_snapshot`]
     /// to recreate the order book state exactly as it was at the moment of the snapshot.
     pub fn snapshot(&self) -> Snapshot {
         return Snapshot {
@@ -467,9 +467,7 @@ impl OrderBook {
             next_order_id: self.next_order_id,
             ts: current_timestamp_millis(),
         };
-    }
-
-    
+    }    
 
     /// Restores the internal state of this [`OrderBook`] from a given [`Snapshot`].
     ///

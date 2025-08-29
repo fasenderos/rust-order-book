@@ -68,7 +68,6 @@ impl OrderBookBuilder {
     ///
     /// # Returns
     /// Returns `self` to allow chaining with other builder methods.
-    /// ```
     pub fn with_replay_logs(mut self, logs: Vec<JournalLog>) -> Self {
         self.options.replay_logs = Some(logs);
         self
