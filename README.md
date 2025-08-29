@@ -5,17 +5,13 @@ Ultra-fast Rust Order Book </br> for high-frequency trading (HFT) :rocket::rocke
 :star: Star me on GitHub — it motivates me a lot!
 </p>
 
+> This crate is a Rust port of one of my Node.js projects, the [nodejs-order-book](https://github.com/fasenderos/nodejs-order-book). I built it while learning Rust, so it works, but don't be surprised if it's not 100% idiomatic—or if some features, like conditional orders, haven't been ported yet. They will be added over time.
+
 ## Table of Contents
 
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
-- [Conditional Orders](#conditional-orders)
-- [About Primary Functions](#about-primary-functions)
-  - [Create Limit order `limit()`](#create-limit-order)
-  - [Create Market order `market()`](#create-market-order)
-  - [Modify an existing order `modifiy()`](#modify-an-existing-order)
-  - [Cancel order `cancel()`](#cancel-order)
 - [Development](#development)
   - [Testing](#testing)
   - [Coverage](#coverage)
@@ -44,6 +40,30 @@ Or add the following line to your `Cargo.toml`:
 ```
 [dependencies]
 rust-order-book = "0.0.1"
+```
+
+## Usage
+```rs
+use rust_order_book::{LimitOrderOptions, MarketOrderOptions, OrderBookBuilder, Side};
+
+let mut ob = OrderBookBuilder::new("BTCUSD").build();
+
+let _ = ob.limit(LimitOrderOptions {
+  side: Side::Buy,
+  quantity: 100,
+  price: 50,
+  time_in_force: None,
+  post_only: None,
+});
+
+let _ = ob.market(MarketOrderOptions {
+  side: Side::Sell,
+  quantity: 50,
+});
+
+let _ = ob.modify(1, 60, None);
+
+let _ = ob.cancel(1);
 ```
 
 ## Development

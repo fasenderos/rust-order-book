@@ -5,6 +5,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{
+    order::{OrderId, Price, Quantity},
+    LimitOrderOptions, MarketOrderOptions,
+};
+
 /// Represents the type of order being placed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -67,8 +72,18 @@ pub enum JournalOp {
     Market,
     /// Limit order
     Limit,
+    /// Modify order (cancel and create new order with updated price and quantity)
+    Modify,
     /// Cancel (delete) order
     Cancel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderOptions {
+    Market(MarketOrderOptions),
+    Limit(LimitOrderOptions),
+    Modify { id: OrderId, price: Option<Price>, quantity: Option<Quantity> },
+    Cancel(OrderId),
 }
 
 #[cfg(test)]

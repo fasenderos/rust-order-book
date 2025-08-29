@@ -9,6 +9,7 @@ pub type Price = u64;
 pub type Quantity = u64;
 
 use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeInForce};
+use serde::{Deserialize, Serialize};
 
 /// Options for submitting a market order to the order book.
 ///
@@ -18,7 +19,7 @@ use crate::{utils::current_timestamp_millis, OrderStatus, OrderType, Side, TimeI
 /// # Fields
 /// - `side`: Buy or Sell
 /// - `quantity`: The total amount to trade
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarketOrderOptions {
     pub side: Side,
     pub quantity: u64,
@@ -31,8 +32,6 @@ pub(crate) struct MarketOrder {
     pub orig_qty: u64,
     pub executed_qty: u64,
     pub remaining_qty: u64,
-    pub order_type: OrderType,
-    pub time: i64,
     pub status: OrderStatus,
 }
 
@@ -44,8 +43,6 @@ impl MarketOrder {
             orig_qty: options.quantity,
             executed_qty: 0,
             remaining_qty: options.quantity,
-            order_type: OrderType::Market,
-            time: get_order_time(None),
             status: OrderStatus::New,
         }
     }
@@ -62,7 +59,7 @@ impl MarketOrder {
 /// - `price`: Limit price
 /// - `time_in_force`: Optional TIF setting (default: GTC)
 /// - `post_only`: Optional post-only flag (default: false)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrderOptions {
     pub side: Side,
     pub quantity: u64,
@@ -71,8 +68,8 @@ pub struct LimitOrderOptions {
     pub post_only: Option<bool>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LimitOrder {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct LimitOrder {
     pub id: OrderId,
     pub side: Side,
     pub executed_qty: u64,
@@ -98,7 +95,7 @@ impl LimitOrder {
             remaining_qty: options.quantity,
             price: options.price,
             order_type: OrderType::Limit,
-            time: get_order_time(None),
+            time: current_timestamp_millis(),
             time_in_force: get_order_time_in_force(options.time_in_force),
             post_only: options.post_only.unwrap_or(false),
             taker_qty: 0,
@@ -106,14 +103,6 @@ impl LimitOrder {
             status: OrderStatus::New,
         }
     }
-}
-
-// fn get_order_id(id: Option<OrderId>) -> OrderId {
-//     id.unwrap_or_else(|| new_order_id())
-// }
-
-fn get_order_time(time: Option<i64>) -> i64 {
-    time.unwrap_or_else(|| current_timestamp_millis())
 }
 
 pub(crate) fn get_order_time_in_force(time_in_force: Option<TimeInForce>) -> TimeInForce {

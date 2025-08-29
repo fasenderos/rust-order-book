@@ -12,7 +12,7 @@ pub fn run(c: &mut Criterion, n_orders: &[u64]) {
                     let _ = ob.limit(LimitOrderOptions {
                         side: Side::Buy,
                         quantity: 50,
-                        price: 1 + i as u64,
+                        price: 1 + i,
                         time_in_force: None,
                         post_only: None,
                     });

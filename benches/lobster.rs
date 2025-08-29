@@ -11,7 +11,7 @@ pub fn run(c: &mut Criterion, n_orders: &[u64]) {
                 for i in 0..n {
                     let _ = ob.execute(OrderType::Limit {
                         id: i as u128,
-                        price: 1 + i as u64,
+                        price: 1 + i,
                         qty: 50,
                         side: Side::Ask,
                     });

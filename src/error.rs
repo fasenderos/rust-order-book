@@ -1,5 +1,7 @@
 use std::{borrow::Cow, fmt};
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 #[non_exhaustive]
 pub(crate) enum ErrorType {
@@ -77,7 +79,7 @@ impl ErrorType {
 /// Concrete error type carrying both code and message.
 ///
 /// `Display` renders as `"[{code}] {message}"`.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct OrderBookError {
     pub code: u32,
