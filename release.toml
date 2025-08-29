@@ -1,0 +1,17 @@
+# Config for cargo-release
+
+sign-commit = false
+sign-tag = false
+push = true
+publish = true
+update-dependencies = true
+
+# Tag format (e.g. v0.3.0)
+tag-name = "v{{version}}"
+
+# Commit messages
+pre-release-commit-message = "chore(release): {{version}}"
+post-release-commit-message = "chore: prepare next development iteration"
+
+# Hook: aggiorna CHANGELOG prima del commit/tag
+pre-release-hook = "git cliff --unreleased --prepend CHANGELOG.md"
