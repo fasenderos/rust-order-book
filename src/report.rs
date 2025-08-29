@@ -30,7 +30,7 @@ pub struct FillReport {
 }
 
 #[derive(Debug)]
-pub struct ExecutionReportParams {
+pub(crate) struct ExecutionReportParams {
     pub id: OrderId,
     pub order_type: OrderType,
     pub side: Side,
@@ -93,7 +93,7 @@ impl ExecutionReport {
     /// - `time_in_force`: Optional TIF value (e.g., GTC, IOC)
     /// - `price`: Optional limit price (or placeholder for market orders)
     /// - `post_only`: Whether the order was post-only
-    pub fn new(params: ExecutionReportParams) -> Self {
+    pub(crate) fn new(params: ExecutionReportParams) -> Self {
         Self {
             order_id: params.id,
             orig_qty: params.quantity,

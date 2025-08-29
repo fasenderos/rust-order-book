@@ -106,15 +106,15 @@ impl MarketOrderOptions {
 
 #[derive(Debug)]
 pub(crate) struct MarketOrder {
-    pub id: OrderId,
-    pub side: Side,
-    pub orig_qty: Quantity,
-    pub executed_qty: Quantity,
-    pub status: OrderStatus,
+    pub(crate) id: OrderId,
+    pub(crate) side: Side,
+    pub(crate) orig_qty: Quantity,
+    pub(crate) executed_qty: Quantity,
+    pub(crate) status: OrderStatus,
 }
 
 impl MarketOrder {
-    pub fn new(id: OrderId, options: MarketOrderOptions) -> MarketOrder {
+    pub(crate) fn new(id: OrderId, options: MarketOrderOptions) -> MarketOrder {
         MarketOrder {
             id,
             side: options.side,
@@ -123,7 +123,7 @@ impl MarketOrder {
             status: OrderStatus::New,
         }
     }
-    pub fn remaining_qty(&self) -> Quantity {
+    pub(crate) fn remaining_qty(&self) -> Quantity {
         self.orig_qty.sub(self.executed_qty)
     }
 }
@@ -159,6 +159,12 @@ impl LimitOrderOptions {
     }
 }
 
+/// `LimitOrder` is `pub` so that it can be exposed in public APIs such as
+/// [`crate::OrderBook::get_order`] and included in [`crate::Snapshot`]. Even though the type
+/// is public, its internal fields are private, so users
+/// can inspect orders and snapshots without being able to mutate the order
+/// book state directly. This ensures safety while allowing serializable
+/// snapshots and journal replay functionality.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct LimitOrder {
     pub id: OrderId,
@@ -176,7 +182,7 @@ pub struct LimitOrder {
 }
 
 impl LimitOrder {
-    pub fn new(id: OrderId, options: LimitOrderOptions) -> LimitOrder {
+    pub(crate) fn new(id: OrderId, options: LimitOrderOptions) -> LimitOrder {
         LimitOrder {
             id,
             side: options.side,
@@ -193,7 +199,7 @@ impl LimitOrder {
         }
     }
 
-    pub fn remaining_qty(&self) -> Quantity {
+    pub(crate) fn remaining_qty(&self) -> Quantity {
         self.orig_qty.sub(self.executed_qty)
     }
 }

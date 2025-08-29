@@ -1,17 +1,17 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Adds two u64 values, saturating on overflow.
-pub fn safe_add(a: u64, b: u64) -> u64 {
+pub(crate) fn safe_add(a: u64, b: u64) -> u64 {
     a.saturating_add(b)
 }
 
 /// Subtracts two u64 values, saturating on underflow.
-pub fn safe_sub(a: u64, b: u64) -> u64 {
+pub(crate) fn safe_sub(a: u64, b: u64) -> u64 {
     a.saturating_sub(b)
 }
 
 /// Get current system timestamp in millis
-pub fn current_timestamp_millis() -> i64 {
+pub(crate) fn current_timestamp_millis() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
