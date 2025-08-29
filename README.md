@@ -1,17 +1,26 @@
-# Rust Order Book
+# Rust Order Book — High-performance Limit Order Book in Rust
+
+<div align="center">
+
+[![Crate Badge]][Crate] [![Repo Badge]][Repo] [![Docs Badge]][Docs] [![License Badge]][License]  \
+[![CI Badge]][CI] [![Deps Badge]][Deps] [![Codecov Badge]][Codecov]
+
+</div>
 
 <p align="center">
-Ultra-fast Rust Order Book </br> for high-frequency trading (HFT) :rocket::rocket: </br></br>
+Ultra-fast Rust Limit Order Book </br> for high-frequency trading (HFT) :rocket::rocket: </br></br>
 :star: Star me on GitHub — it motivates me a lot!
 </p>
 
-> This crate is a Rust port of one of my Node.js projects, the [nodejs-order-book](https://github.com/fasenderos/nodejs-order-book). I built it while learning Rust, so it works, but don't be surprised if it's not 100% idiomatic—or if some features, like conditional orders, haven't been ported yet. They will be added over time.
+> This crate is a Rust port of one of my Node.js projects, the [nodejs-order-book](https://github.com/fasenderos/nodejs-order-book).  
+> It works, but don't be surprised if it's not 100% idiomatic yet—or if some features (like conditional orders) are still missing.  
+> They will be added over time. ✅
 
 ## Table of Contents
-
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Example Output](#example-output)
 - [Development](#development)
   - [Testing](#testing)
   - [Coverage](#coverage)
@@ -20,19 +29,25 @@ Ultra-fast Rust Order Book </br> for high-frequency trading (HFT) :rocket::rocke
 - [Donation](#donation)
 - [License](#license)
 
+---
+
 ## Features
-- Standard price-time priority
-- Supports both market and limit orders
-- Supports `post-only` limit order
-- Supports time in force `GTC`, `FOK` and `IOC`
-- Supports order cancelling
-- Supports order price and/or size updating
+- 🚀 Ultra-fast (no `unsafe`) implementation in pure Rust
+- 📈 Suitable for **HFT** and **exchange backtesting**
+- ✅ Standard price-time priority
+- 🏦 Market and limit orders
+- 🔒 `post-only` support
+- ⏳ Time in force: `GTC`, `IOC`, `FOK`
+- 🔄 Modify & cancel orders
+- 🧪 Tested with benchmarks and coverage
+
+---
 
 ## Installation
 
 Run the following Cargo command in your project directory:
 
-```
+```bash
 cargo add rust-order-book
 ```
 
@@ -46,9 +61,9 @@ rust-order-book = "0.0.1"
 ```rs
 use rust_order_book::{LimitOrderOptions, MarketOrderOptions, OrderBookBuilder, Side};
 
-let mut ob = OrderBookBuilder::new("BTCUSD").build();
+let mut book = OrderBookBuilder::new("BTCUSD").build();
 
-let _ = ob.limit(LimitOrderOptions {
+let _ = book.limit(LimitOrderOptions {
   side: Side::Buy,
   quantity: 100,
   price: 50,
@@ -56,35 +71,42 @@ let _ = ob.limit(LimitOrderOptions {
   post_only: None,
 });
 
-let _ = ob.market(MarketOrderOptions {
+let _ = book.market(MarketOrderOptions {
   side: Side::Sell,
   quantity: 50,
 });
 
-let _ = ob.modify(1, 60, None);
+let _ = book.modify(1, 60, None);
 
-let _ = ob.cancel(1);
+let _ = book.cancel(1);
+```
+### Example Output
+You can easily inspect the state of the book:
+```
+println!("{}", book);
+```
+
+Example:
+```
+1200 -> 10
+1100 -> 5
+------------------------------------
+900 -> 15
+850 -> 5
 ```
 
 ## Development
 ### Testing
-
-To run all the unit-test
-
 ```
-cargo nextest run
+cargo test
 ```
 
 ### Coverage
-
-Run testing coverage
-
 ```
-cargo llvm-cov nextest
+cargo llvm-cov
 ```
 
 ### Benchmarking
-
 ```
 cargo bench
 ```
@@ -100,15 +122,39 @@ I would greatly appreciate any contributions to make this project better. Please
 5. Open a pull request
 
 ## Donation
-
-If this project help you reduce time to develop, you can give me a cup of coffee 🍵 :)
+<details>
+<summary>
+If this project help you reduce time to develop, buy me a coffee 🍵😊
+</summary>
 
 - USDT (TRC20): `TXArNxsq2Ee8Jvsk45PudVio52Joiq1yEe`
 - BTC: `1GYDVSAQNgG7MFhV5bk15XJy3qoE4NFenp`
 - BTC (BEP20): `0xf673ee099be8129ec05e2f549d96ebea24ac5d97`
 - ETH (ERC20): `0xf673ee099be8129ec05e2f549d96ebea24ac5d97`
 - BNB (BEP20): `0xf673ee099be8129ec05e2f549d96ebea24ac5d97`
+</details>
 
 ## License
 
 Copyright [Andrea Fassina](https://github.com/fasenderos), Licensed under [MIT](LICENSE).
+
+[CI]: https://github.com/fasenderos/rust-order-book/actions/workflows/test.yml
+[CI Badge]: https://img.shields.io/github/actions/workflow/status/fasenderos/rust-order-book/test.yml?style=flat-square&logo=github
+
+[Codecov]: https://codecov.io/gh/fasenderos/rust-order-book
+[Codecov Badge]: https://codecov.io/gh/fasenderos/rust-order-book/graph/badge.svg?style=flat-square&color=C43AC3&logo=codecov&token=KQ5M5ZXYMH
+
+[Crate]: https://crates.io/crates/rust-order-book
+[Crate Badge]: https://img.shields.io/crates/v/rust-order-book?logo=rust&style=flat-square&color=E05D44
+
+[Deps]: https://deps.rs/repo/github/fasenderos/rust-order-book
+[Deps Badge]: https://deps.rs/repo/github/fasenderos/rust-order-book/status.svg?style=flat-square
+
+[Docs]: https://docs.rs/rust-order-book
+[Docs Badge]: https://img.shields.io/badge/docs-rust--order--book-1370D3?style=flat-square&logo=rust
+
+[License]: ./LICENSE
+[License Badge]: https://img.shields.io/crates/l/rust-order-book?style=flat-square&color=1370D3
+
+[Repo]: https://github.com/fasenderos/rust-order-book
+[Repo Badge]: https://img.shields.io/badge/repo-fasenderos/rust--order--book-1370D3?style=flat-square&logo=github
