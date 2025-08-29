@@ -5,6 +5,8 @@ Ultra-fast Rust Order Book </br> for high-frequency trading (HFT) :rocket::rocke
 :star: Star me on GitHub — it motivates me a lot!
 </p>
 
+> This crate is a Rust port of one of my Node.js projects, the [nodejs-order-book](https://github.com/fasenderos/nodejs-order-book). I built it while learning Rust, so it works, but don't be surprised if it's not 100% idiomatic—or if some features, like conditional orders, haven't been ported yet. They will be added over time.
+
 ## Table of Contents
 
 - [Features](#features)
